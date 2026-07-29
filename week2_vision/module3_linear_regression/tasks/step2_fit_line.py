@@ -29,8 +29,6 @@ from . import PDControl
 from . import line_util as lu
 from . import filter_util as fu
 
-# from . import cam_util as cu
-
 # -- Constants --------------------------------------------------------------
 S_MIN = 200
 MIN_PIXELS = 200
@@ -52,17 +50,12 @@ _done = False
 _lap = 0
 _return_timer = 0.0
 _prev_roll_err = 0.0
+_prev_bottom_mean = None
 
-full_controller = PDControl.FullController(kp_yaw=0.5, kp_alt=1, max_yaw = 1, max_throttle=0.8)
+full_controller = PDControl.FullController(kp_yaw=0.5, kp_alt=1, max_yaw=1, max_throttle=0.8)
 roll_controller = PDControl.PDController(4.0, 0.0, 0.2)
 direction_filter = fu.VectorOneEuroFilter(_timer, np.zeros((4, 2)), min_cutoff=1.0, beta=0.0)
 mean_filter = fu.VectorOneEuroFilter(_timer, np.zeros((4, 2)), min_cutoff=1.0, beta=0.0)
-
-context = rs.context()
-devices = context.query_devices()
-device = devices[0]
-camera_matrix = None
-dist_coeffs = None
 
 mode = "None"
 
@@ -74,7 +67,7 @@ def reset():
 
 
 def run_line_follow(drone):
-    global _timer, _done, _lap, ADVANCE_PITCH, _prev_roll_err, _return_timer, mode
+    global _timer, _done, _lap, ADVANCE_PITCH, _prev_roll_err, _return_timer, mode, _prev_bottom_mean
     dt = drone.get_delta_time()
     _image = drone.camera.get_downward_image_async()
     image = cv2.resize(_image, (640, 480), interpolation=cv2.INTER_LINEAR)
@@ -97,9 +90,11 @@ def run_line_follow(drone):
             roll = roll_controller.calculate_position(normalized_roll_err, dt)
             drone.flight.send_pcmd(0, roll, 0, 0)
             return False
-    _directions, _means = lu.fit_lines(points)
+    _directions, _means = lu.fit_lines(points, prev_bottom_mean=_prev_bottom_mean)
     directions = direction_filter(_timer, _directions)
     means = mean_filter(_timer, _means)
+    _prev_bottom_mean = means[3]
+    # print(f"directions: {directions}, means: {means}")
     angles = np.arctan(directions[:, 0] / directions[:, 1])
     angles = np.degrees(angles)
     curvature = angles[0] - angles[3]
@@ -122,7 +117,7 @@ def run_line_follow(drone):
             mode = "Roll Correct"
         roll_controller.max_output = 1
         mode = "Curve"
-    curvature_ff = -curvature * 0.005
+    curvature_ff = -curvature * 0.008
     full_controller.set_setpoint(_alt=0.5)
     normalized_roll_err = roll_err / COL_CENTER
     roll = -roll_controller.calculate_position(normalized_roll_err, dt) + curvature_ff
@@ -136,44 +131,6 @@ def run_line_follow(drone):
     return None
 
 
-def run_aruco_detect(drone):
-    global dist_coeffs, camera_matrix
-    image = drone.camera.get_color_image_async()
-    detector = cv2.aruco.ArucoDetector(cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_100),
-                                       cv2.aruco.DetectorParameters())
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    corners, ids, rejected = detector.detectMarkers(gray)
-    if camera_matrix is None:
-        color_sensor = None
-        for sensor in device.query_sensors():
-            if sensor.get_info(rs.camera_info.name) == "RGB Camera":
-                color_sensor = sensor
-                break
-        for profile in color_sensor.get_stream_profiles():
-            if profile.is_video_stream_profile():
-                v_profile = profile.as_video_stream_profile()
-
-                # Target the specific color stream type
-                if v_profile.stream_type() == rs.stream.color:
-                    intrinsics = v_profile.get_intrinsics()
-                    dist_coeffs = intrinsics.coeffs
-                    camera_matrix = np.array([
-                        [intrinsics.fx, 0, intrinsics.ppx],
-                        [0, intrinsics.fy, intrinsics.ppy],
-                        [0, 0, 1]
-                    ], dtype=np.float32)
-                    break
-    if ids is not None:
-        for i, corner in enumerate(corners):
-            success, rvec, tvec = cv2.solvePnP(
-                obj_points, corner[0], camera_matrix, dist_coeffs, flags=cv2.SOLVEPNP_IPPE_SQUARE
-            )
-            if success:
-                x, y, z = tvec.flatten()
-                print(f"xyz: {x, y, z}")
-    print(f"id: {ids}")
-
-
 def update(drone):
     global _timer, _done, _was_green, _lap, ADVANCE_PITCH, _prev_roll_err, _return_timer
     if _done:
@@ -181,7 +138,6 @@ def update(drone):
     drone.flight.stop()  # hover in place
 
     _timer += drone.get_delta_time()
-    # run_aruco_detect(drone)
     run_line_follow(drone)
     # full_controller.set_setpoint(_fwd=5, _rgt=0, _yaw=0, _alt=0.5)
     # output = full_controller.calculate(_fwd=drone.physics.get_position()[0], _rgt=drone.physics.get_position()[2], _alt=drone.physics.get_altitude(), _alt_vel=drone.physics.get_linear_velocity()[1], _yaw=drone.physics.get_attitude()[1])

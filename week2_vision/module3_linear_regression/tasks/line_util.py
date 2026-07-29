@@ -85,9 +85,7 @@ def fit_lines(_points, prev_bottom_mean=None, num_segments = 4):
 
     directions = np.array([dq1, dq2, dq3, dq4])
     means = np.array([mq1, mq2, mq3, mq4])
-
-    ###### END PUT CODE HERE #########
-    ##################################
+    # return directions, means
     return correct_directions(directions, means, prev_bottom_mean)
 
 def correct_directions(directions, means, prev_bottom_mean=None): # 0 is furthest from drone, 3 is closest to drone

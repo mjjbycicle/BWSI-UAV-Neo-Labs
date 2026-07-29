@@ -11,6 +11,7 @@ DETECTOR = cv2.aruco.ArucoDetector(ARUCO_DICT, ARUCO_PARAMS)
 #Idk how accurate the values are below, they were taken from a prev lab
 FOCAL_PX = 320.0        # Camera focal length in pixels (approx calibration)
 REAL_TAG_SIZE = 0.30    # Physical corner-tag side length, meters (approx)
+MAX_DETECTION_DIST = 4.0
 
 
 
@@ -48,13 +49,14 @@ def marker_distance(corners):
 
     for c in corners: # Averages the side length of each marker in pixels and calculates the distance from the camera
         points = c.reshape(-1, 2)
-        side_lengths = [
+        side_lengths = np.array([
             np.linalg.norm(points[0] - points[1]), # Top
             np.linalg.norm(points[1] - points[2]), # Right
             np.linalg.norm(points[2] - points[3]), # Bottom
             np.linalg.norm(points[3] - points[0])  # Left
-        ]
-        distances.append(FOCAL_PX * REAL_TAG_SIZE / np.mean(side_lengths))
+        ])
+        dist = FOCAL_PX * REAL_TAG_SIZE / np.mean(side_lengths)
+        if dist < MAX_DETECTION_DIST: distances.append(dist)
 
     return np.mean(distances) # Averages the distances between each marker and the drone
 
