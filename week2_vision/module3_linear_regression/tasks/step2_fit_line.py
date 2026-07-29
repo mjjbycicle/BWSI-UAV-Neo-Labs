@@ -154,12 +154,11 @@ def line_control_loop(drone):
             full_controller.set_setpoint(_alt=0.5)
             normalized_roll_err = roll_err / COL_CENTER
             roll = -roll_controller.calculate_position(normalized_roll_err, dt) + curvature_ff
-            roll = drone_utils.clamp(roll, -10, 10)
-
+            roll = drone_utils.clamp(roll, -1, 1)
             output = full_controller.calculate(_alt=drone.physics.get_altitude(),
                                                _alt_vel=drone.physics.get_linear_velocity()[1],
                                                _yaw=target_angle, dt=dt)
-
+            print(f"roll: {roll}, yaw: {output[2]}")
             # UPDATE THREAD STATE INSTEAD OF SENDING
             _latest_cmd = {"pitch": ADVANCE_PITCH, "roll": roll, "yaw": output[2], "throttle": output[3]}
             _prev_roll_err = roll_err
