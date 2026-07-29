@@ -27,6 +27,7 @@ if _d not in _sys.path:
 import neo_lab
 from . import PDControl
 from . import line_util as lu
+from . import filter_util as fu
 
 # from . import cam_util as cu
 
@@ -54,6 +55,8 @@ _prev_roll_err = 0.0
 
 full_controller = PDControl.FullController(kp_yaw=0.5, kp_alt=1, max_yaw = 1, max_throttle=0.8)
 roll_controller = PDControl.PDController(4.0, 0.0, 0.2)
+direction_filter = fu.VectorOneEuroFilter(_timer, np.zeros((4, 2)), min_cutoff=1.0, beta=0.0)
+mean_filter = fu.VectorOneEuroFilter(_timer, np.zeros((4, 2)), min_cutoff=1.0, beta=0.0)
 
 context = rs.context()
 devices = context.query_devices()
@@ -71,11 +74,10 @@ def reset():
 
 
 def run_line_follow(drone):
-    global _timer, _done, _was_green, _lap, ADVANCE_PITCH, _prev_roll_err, _return_timer, mode
+    global _timer, _done, _lap, ADVANCE_PITCH, _prev_roll_err, _return_timer, mode
     dt = drone.get_delta_time()
     _image = drone.camera.get_downward_image_async()
     image = cv2.resize(_image, (640, 480), interpolation=cv2.INTER_LINEAR)
-    _timer += dt
     _mask = neo_lab.bright_mask(image, S_MIN)
     mask = lu.get_largest_component_optimized(_mask)
     points = np.argwhere(mask == 255)
@@ -95,7 +97,9 @@ def run_line_follow(drone):
             roll = roll_controller.calculate_position(normalized_roll_err, dt)
             drone.flight.send_pcmd(0, roll, 0, 0)
             return False
-    directions, means = lu.fit_lines(points)
+    _directions, _means = lu.fit_lines(points)
+    directions = direction_filter(_timer, _directions)
+    means = mean_filter(_timer, _means)
     angles = np.arctan(directions[:, 0] / directions[:, 1])
     angles = np.degrees(angles)
     curvature = angles[0] - angles[3]
@@ -129,10 +133,11 @@ def run_line_follow(drone):
     # print(f"roll={roll}, throttle={output[3]}, pitch={ADVANCE_PITCH}, yaw={output[2]}")
     drone.flight.send_pcmd(ADVANCE_PITCH, roll, output[2], output[3])
     _prev_roll_err = roll_err
+    return None
 
 
 def run_aruco_detect(drone):
-    global selection, dist_coeffs, camera_matrix
+    global dist_coeffs, camera_matrix
     image = drone.camera.get_color_image_async()
     detector = cv2.aruco.ArucoDetector(cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_100),
                                        cv2.aruco.DetectorParameters())
@@ -175,6 +180,7 @@ def update(drone):
         return True
     drone.flight.stop()  # hover in place
 
+    _timer += drone.get_delta_time()
     # run_aruco_detect(drone)
     run_line_follow(drone)
     # full_controller.set_setpoint(_fwd=5, _rgt=0, _yaw=0, _alt=0.5)

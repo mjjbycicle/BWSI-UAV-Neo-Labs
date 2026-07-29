@@ -53,7 +53,7 @@ _gate_dict = None
 def _gate_aruco_dict():
     global _gate_dict
     if _gate_dict is None:
-        _gate_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_250)
+        _gate_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_250)
     return _gate_dict
 
 
