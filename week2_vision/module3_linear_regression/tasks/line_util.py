@@ -1,3 +1,5 @@
+import math
+
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import minimum_spanning_tree, depth_first_order
 from scipy.spatial import cKDTree
@@ -31,7 +33,7 @@ def fit_line(x, y):
     return direction, centroid
 
 
-def fit_lines(_points, num_segments = 4):
+def fit_lines(_points, prev_bottom_mean=None, num_segments = 4):
     # points = downsample_points_grid(_points, target_points=1000)
     points = _points
     n_points = len(points)
@@ -86,7 +88,33 @@ def fit_lines(_points, num_segments = 4):
 
     ###### END PUT CODE HERE #########
     ##################################
+    return correct_directions(directions, means, prev_bottom_mean)
+
+def correct_directions(directions, means, prev_bottom_mean=None): # 0 is furthest from drone, 3 is closest to drone
+    if prev_bottom_mean is None:
+        prev_bottom_mean = [420, 320]
+    d0 = math.hypot(means[0][0] - prev_bottom_mean[0], means[0][1] - prev_bottom_mean[1])
+    d3 = math.hypot(means[3][0] - prev_bottom_mean[0], means[3][1] - prev_bottom_mean[1])
+    if d0 < d3: # flip line
+        directions = directions[::-1]
+        means = means[::-1]
+    for i in range(1, 4):
+        prev_mean = means[i-1]
+        prev_direction = directions[i-1]
+        curr_mean = means[i]
+        curr_direction = directions[i]
+        if is_right_of_line(curr_mean, prev_mean, prev_direction):
+            if curr_direction[0] > 0 and curr_direction[1] > 0:
+                directions[i] = -directions[i]
+        else:
+            if curr_direction[0] > 0 > curr_direction[1]:
+                directions[i] = -directions[i]
     return directions, means
+
+def is_right_of_line(point, line_point, line_direction):
+    vector_to_point = point - line_point
+    cross_product = np.cross(line_direction, vector_to_point)
+    return cross_product > 0
 
 def get_green_fraction(image):
     lower_green = np.array([0, 50, 0])      # Lower limit for Green
