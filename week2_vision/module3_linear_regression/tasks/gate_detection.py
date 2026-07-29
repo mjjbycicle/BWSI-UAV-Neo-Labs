@@ -72,20 +72,8 @@ If 1 marker is detected, a center coord can't be determined so None will be retu
 def center_coord(corners, ids):
     centers = np.array([c.mean(axis = 1)[0] for c in corners])
 
-    if len(ids) == 4:
-        return np.mean(centers, axis = 0)
-    
-    elif len(ids) == 3:
-        a = np.linalg.norm(centers[0] - centers[1])
-        b = np.linalg.norm(centers[0] - centers[2])
-        c = np.linalg.norm(centers[1] - centers[2])
-
-        if a > b and a > c:
-            return (centers[0] + centers[1]) / 2
-        elif b > a and b > c:
-            return (centers[0] + centers[2]) / 2
-        else:
-            return (centers[1] + centers[2]) / 2
+    if len(ids) >= 3:
+        return camera_robust_center(centers)
         
     elif len(ids) == 2:
         dx = abs(centers[0][0] - centers[1][0])
@@ -95,6 +83,22 @@ def center_coord(corners, ids):
             return np.mean(centers, axis = 0)
 
     return None
+
+
+import numpy as np
+
+
+def camera_robust_center(points):
+    pts = np.asarray(points, dtype=np.float64)
+    x = pts[:, 0]
+    y = pts[:, 1]
+    A = np.column_stack((x, y, np.ones_like(x)))
+    B = x ** 2 + y ** 2
+    X, _, _, _ = np.linalg.lstsq(A, B, rcond=None)
+    xc = X[0] / 2
+    yc = X[1] / 2
+    radius = np.sqrt(X[2] + xc ** 2 + yc ** 2)
+    return xc, yc
 
 
 def detect_gates(image):
