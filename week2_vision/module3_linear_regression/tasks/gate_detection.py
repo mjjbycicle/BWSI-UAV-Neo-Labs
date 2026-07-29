@@ -69,11 +69,13 @@ def marker_distance(corners):
             np.linalg.norm(points[2] - points[3]), # Bottom
             np.linalg.norm(points[3] - points[0])  # Left
         ])
-        dist = FOCAL_PX * REAL_TAG_SIZE / np.mean(side_lengths)
-        if dist < MAX_DETECTION_DIST: distances.append(dist)
+        distances.append(FOCAL_PX * REAL_TAG_SIZE / np.mean(side_lengths))
 
     return np.mean(distances) # Averages the distances between each marker and the drone
 
+
+def gate_distance(corners):
+    return np.mean(marker_distance(corner) for corner in corners)
 
 
 """
@@ -113,6 +115,29 @@ def camera_robust_center(points):
     return xc, yc
 
 
+# Gets the id of the closest gate
+def get_closest_gate(corners, ids):
+    gates = {}
+
+    for id, corner in zip(ids.flatten(), corners):
+        gate_id = ID_TO_GATE_ID[id]
+
+        if gate_id not in gates:
+            gates[gate_id] = {
+                "ids": [],
+                "corners": []
+            }
+
+        gates[gate_id]["ids"].append(id)
+        gates[gate_id]["corners"].append(corner)
+
+    for gate_id, gate_data in gates.items():
+        distance = gate_distance(gate_data["corners"])
+
+
+    
+
+
 def detect_gates(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     corners, ids, rejected = DETECTOR.detectMarkers(gray)
@@ -124,8 +149,12 @@ def detect_gates(image):
     distance = marker_distance(corners)
     center = center_coord(corners, ids) # center will be an array (x, y)
 
+    closest_corners, closest_ids = get_closest_gate(corners, ids)
+
+
     debug(corners, ids, rejected, image, center)
     return Gate(int(corners[0]), int(corners[1]), [int(i) for i in ids.flatten()], distance)
+
 
 class Gate:
     """A gate located from its corner ArUco tags: image center (cx, cy), inter-tag span
