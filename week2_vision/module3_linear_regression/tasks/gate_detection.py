@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-TEST_PATH = "gate_images/aruco_test_image6.jpeg"
+TEST_PATH = "gate_images/aruco_test_image8.jpeg"
 OUTPUT_PATH = "gate_images/debug_output.jpeg"
 
 ARUCO_DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_250)  #Type of aruco tag
@@ -75,6 +75,7 @@ def marker_distance(corners):
     return np.mean(distances) # Averages the distances between each marker and the drone
 
 
+# Returns the distance each gate is from the camera in meters
 def gate_distance(corners):
     return np.mean([marker_distance(corner) for corner in corners])
 
@@ -159,6 +160,9 @@ def detect_gates(image):
 
     # print(closest_ids)
     debug(closest_corners, closest_ids, rejected, image, center)
+
+    if center is None:
+        return Gate(None, None, [int(i) for i in closest_ids.flatten()], closest_distance)
     return Gate(int(center[0]), int(center[1]), [int(i) for i in closest_ids.flatten()], closest_distance)
 
 
