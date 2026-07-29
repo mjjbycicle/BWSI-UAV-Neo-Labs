@@ -1,17 +1,17 @@
 import cv2
 import numpy as np
 
-TEST_PATH = "gate_images\aruco_test_image1.jpeg"
-OUTPUT_PATH = "gate_images\debug_output.jpeg"
+TEST_PATH = "gate_images/aruco_test_image3.jpeg"
+OUTPUT_PATH = "gate_images/debug_output.jpeg"
 
 ARUCO_DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_250)  #Type of aruco tag
 ARUCO_PARAMS = cv2.aruco.DetectorParameters()                           #Default params in cv2
 DETECTOR = cv2.aruco.ArucoDetector(ARUCO_DICT, ARUCO_PARAMS)
 
 #Idk how accurate the values are below, they were taken from a prev lab
-FOCAL_PX = 320.0        # Camera focal length in pixels (approx calibration)
-REAL_TAG_SIZE = 0.30    # Physical corner-tag side length, meters (approx)
-MAX_DETECTION_DIST = 4.0
+FOCAL_PX = 320.0            # Camera focal length in pixels (approx calibration)
+REAL_TAG_SIZE = 0.19        # Physical corner-tag side length, meters (approx)
+MAX_DETECTION_DIST = 4.0    # Distance threshold to detect tags
 
 
 
@@ -30,8 +30,14 @@ def draw_marker_borders(image, corners, color=(0, 255, 0), thickness=5):
             )
 
 
+# Creates a red dot at where it thinks the center is
+def draw_center_point(image, center):
+    if center is not None:
+        cv2.circle(image, (int(center[0]), int(center[1])), radius = 32, color = (0, 0, 255), thickness = -1)
+
+
 # Shows the output of the image detection
-def debug(corners, ids, rejected, image):
+def debug(corners, ids, rejected, image, center):
     if ids is None:
         print("No markers detected")
         cv2.aruco.drawDetectedMarkers(image, rejected, borderColor=(0, 0, 255))
@@ -40,6 +46,7 @@ def debug(corners, ids, rejected, image):
         print(f"{len(ids)} markers detected")
         cv2.aruco.drawDetectedMarkers(image, corners, ids, borderColor=(0, 255, 0))
         draw_marker_borders(image, corners, thickness=16)
+        draw_center_point(image, center)
         cv2.imwrite(OUTPUT_PATH, image)
 
 
@@ -100,7 +107,6 @@ def center_coord(corners, ids):
 def detect_gates(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     corners, ids, rejected = DETECTOR.detectMarkers(gray)
-    debug(corners, ids, rejected, image)
 
     if ids is None:
         return None
@@ -108,7 +114,22 @@ def detect_gates(image):
     # Note: distance and center coord may be messed up if the camera detects a aruco tag from another gate
     distance = marker_distance(corners)
     center = center_coord(corners, ids) # center will be an array (x, y)
-    
+
+    debug(corners, ids, rejected, image, center)
+    return Gate(int(corners[0]), int(corners[1]), [int(i) for i in ids.flatten()], distance)
+
+class Gate:
+    """A gate located from its corner ArUco tags: image center (cx, cy), inter-tag span
+    (gate size proxy), mean tag pixel size (a proximity signal that works with one tag),
+    and the decoded corner-tag ids."""
+
+    def __init__(self, cx, cy, ids, distance):
+        self.cx = cx
+        self.cy = cy
+        self.ids = ids
+        self.distance = distance
+        self.count = len(ids)
+
 
 def main():
     print("Started...")
