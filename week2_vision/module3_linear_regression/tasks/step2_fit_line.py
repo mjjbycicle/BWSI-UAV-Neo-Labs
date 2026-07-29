@@ -66,10 +66,10 @@ mode = "None"
 
 _vision_thread = None
 _vision_running = False
-# Initialize with safe hover commands
 _latest_cmd = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "throttle": 0.0}
 _gate_thread = None
 _gate_running = False
+_closest_gate = None
 
 def reset():
     global _timer, _done
@@ -176,7 +176,7 @@ def line_control_loop(drone):
 
 
 def gate_detect_loop(drone):
-    global _timer, _done, _lap, ADVANCE_PITCH, _prev_roll_err, _return_timer, mode, _prev_bottom_mean
+    global _timer, _done, _lap, ADVANCE_PITCH, _prev_roll_err, _return_timer, mode, _prev_bottom_mean, _closest_gate
     global _vision_running, _latest_cmd
 
     # Target 20 frames per second (0.05 seconds per loop)
@@ -197,6 +197,7 @@ def gate_detect_loop(drone):
         if _image is not None:
             image = cv2.resize(_image, (640, 480), interpolation=cv2.INTER_LINEAR)
             gate = gd.detect_gates(image)
+            _closest_gate = gate
             print(gate)
 
         # Small sleep to prevent this loop from maxing out a CPU core
