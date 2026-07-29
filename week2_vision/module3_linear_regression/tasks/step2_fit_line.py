@@ -19,6 +19,8 @@ import drone_core
 import drone_utils
 import pyrealsense2 as rs
 
+from camera import Camera
+
 _d = _os.path.dirname(_os.path.realpath(__file__))
 while _os.path.basename(_d) != "labs" and _os.path.dirname(_d) != _d:
     _d = _os.path.dirname(_d)
@@ -28,6 +30,7 @@ import neo_lab
 from . import PDControl
 from . import line_util as lu
 from . import filter_util as fu
+from . import gate_detection as gd
 import threading
 import time
 
@@ -65,6 +68,8 @@ _vision_thread = None
 _vision_running = False
 # Initialize with safe hover commands
 _latest_cmd = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "throttle": 0.0}
+_gate_thread = None
+_gate_running = False
 
 def reset():
     global _timer, _done
@@ -72,7 +77,7 @@ def reset():
     _done = False
 
 
-def vision_loop(drone):
+def line_control_loop(drone):
     global _timer, _done, _lap, ADVANCE_PITCH, _prev_roll_err, _return_timer, mode, _prev_bottom_mean
     global _vision_running, _latest_cmd
 
@@ -170,19 +175,61 @@ def vision_loop(drone):
             time.sleep(time_to_sleep)
 
 
+def gate_detect_loop(drone):
+    global _timer, _done, _lap, ADVANCE_PITCH, _prev_roll_err, _return_timer, mode, _prev_bottom_mean
+    global _vision_running, _latest_cmd
+
+    # Target 20 frames per second (0.05 seconds per loop)
+    target_fps = 20.0
+    loop_delay = 1.0 / target_fps
+
+    last_time = time.time()
+
+    while _vision_running:
+        loop_start_time = time.time()
+
+        # Calculate isolated delta time for the vision controllers
+        dt = loop_start_time - last_time
+        last_time = loop_start_time
+
+        _image = drone.camera.get_color_image_async()
+
+        if _image is not None:
+            image = cv2.resize(_image, (640, 480), interpolation=cv2.INTER_LINEAR)
+            gate = gd.detect_gates(image)
+            print(gate)
+
+        # Small sleep to prevent this loop from maxing out a CPU core
+        # --- THE RATE LIMITER ---
+        # Calculate how long the math actually took
+        math_duration = time.time() - loop_start_time
+
+        # Sleep for whatever time is remaining to hit our exact 20Hz target
+        time_to_sleep = loop_delay - math_duration
+        if time_to_sleep > 0:
+            time.sleep(time_to_sleep)
+
+
+
 def update(drone):
-    global _timer, _done, _vision_thread, _vision_running, _latest_cmd
+    global _timer, _done, _vision_thread, _vision_running, _latest_cmd, _gate_running, _gate_thread
 
     if _done:
         _vision_running = False  # Tell the thread loop to shut down safely
+        _gate_running = False
         return True
 
     # Initialize the background thread on the first tick
     if _vision_thread is None:
         _vision_running = True
         # Setting daemon=True ensures the thread dies automatically if the main program crashes
-        _vision_thread = threading.Thread(target=vision_loop, args=(drone,), daemon=True)
+        _vision_thread = threading.Thread(target=line_control_loop, args=(drone,), daemon=True)
         _vision_thread.start()
+
+    if _gate_thread is None:
+        _gate_running = True
+        _gate_thread = threading.Thread(target=gate_detect_loop, args=(drone,), daemon=True)
+        _gate_thread.start()
 
     _timer += drone.get_delta_time()
 

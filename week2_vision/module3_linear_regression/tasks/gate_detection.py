@@ -178,6 +178,9 @@ class Gate:
         self.distance = distance
         self.count = len(ids)
 
+    def __str__(self):
+        return f"Gate(cx={self.cx}, cy={self.cy}, ids={self.ids}, distance={self.distance})"
+
 
 def main():
     print("Started...")
