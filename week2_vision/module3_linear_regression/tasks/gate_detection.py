@@ -8,8 +8,8 @@ ARUCO_DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_250)  #Type of
 ARUCO_PARAMS = cv2.aruco.DetectorParameters()                           #Default params in cv2
 DETECTOR = cv2.aruco.ArucoDetector(ARUCO_DICT, ARUCO_PARAMS)
 
-#Idk how accurate the values are below, they were taken from a prev lab
-FOCAL_PX = 320.0            # Camera focal length in pixels (approx calibration)
+#Idk how accurate the values are below
+FOCAL_PX = 615.3            # Camera focal length in pixels (approx calibration)
 REAL_TAG_SIZE = 0.19        # Physical corner-tag side length, meters (approx)
 MAX_DETECTION_DIST = 4.0    # Distance threshold to detect tags
 
@@ -20,6 +20,7 @@ ID_TO_GATE_ID = dict()
 for i in range(len(GATES)):
     for j in GATES[i]:
         ID_TO_GATE_ID[j] = i
+
 
 # Not rly needed but it makes the borders in debug output easier to see (made by the good ol' chatgpt)
 def draw_marker_borders(image, corners, color=(0, 255, 0), thickness=5):
@@ -97,9 +98,6 @@ def center_coord(corners, ids):
             else:
                 return centers[0][0], centers[1][1]
     return None
-
-
-import numpy as np
 
 
 def camera_robust_center(points):
