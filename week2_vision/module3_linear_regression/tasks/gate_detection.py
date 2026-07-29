@@ -13,7 +13,13 @@ FOCAL_PX = 320.0            # Camera focal length in pixels (approx calibration)
 REAL_TAG_SIZE = 0.19        # Physical corner-tag side length, meters (approx)
 MAX_DETECTION_DIST = 4.0    # Distance threshold to detect tags
 
-
+HORIZONTAL_TAGS = [1, 2, 3, 4, 5, 6, 7, 8]
+VERTICAL_TAGS = [9, 10, 11, 12, 13, 14, 15, 16]
+GATES = [[1, 2, 9, 10], [3, 4, 11, 12], [5, 6, 13, 14], [7, 8, 15, 16]]
+ID_TO_GATE_ID = dict()
+for i in range(len(GATES)):
+    for j in GATES[i]:
+        ID_TO_GATE_ID[j] = i
 
 # Not rly needed but it makes the borders in debug output easier to see (made by the good ol' chatgpt)
 def draw_marker_borders(image, corners, color=(0, 255, 0), thickness=5):
@@ -83,12 +89,13 @@ def center_coord(corners, ids):
         return camera_robust_center(centers)
         
     elif len(ids) == 2:
-        dx = abs(centers[0][0] - centers[1][0])
-        dy = abs(centers[0][1] - centers[1][1])
-
-        if dx > 2.75 * dy or dy > 2.75 * dx: # Horizontal or vertical tags
-            return np.mean(centers, axis = 0)
-
+        if (ids[0] in HORIZONTAL_TAGS and ids[1] in HORIZONTAL_TAGS) or (ids[0] in VERTICAL_TAGS and ids[1] in VERTICAL_TAGS):
+            return centers.mean(axis = 0)
+        else:
+            if ids[0] in HORIZONTAL_TAGS:
+                return centers[1][0], centers[0][1]
+            else:
+                return centers[0][0], centers[1][1]
     return None
 
 
