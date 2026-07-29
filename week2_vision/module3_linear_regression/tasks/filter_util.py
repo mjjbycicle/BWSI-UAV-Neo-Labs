@@ -1,3 +1,5 @@
+from typing import Union
+
 import numpy as np
 
 
@@ -36,3 +38,80 @@ class VectorOneEuroFilter:
         self.dx_prev = dx
 
         return x_filtered
+
+
+class ExponentialLowPassFilter:
+    """
+    An exponential low-pass filter for smoothing noisy signals.
+    """
+
+    def __init__(self, alpha: float):
+        """
+        Initialize the filter.
+
+        Args:
+            alpha (float): The smoothing factor, between 0.0 and 1.0.
+                           - 1.0 means no filtering (raw signal passes through).
+                           - Values closer to 0.0 mean heavy filtering/smoothing.
+        """
+        if not 0.0 <= alpha <= 1.0:
+            raise ValueError("Alpha must be between 0.0 and 1.0")
+
+        self.alpha = alpha
+        self.last_estimate = None
+
+    def __call__(self, current_value: float) -> float:
+        """
+        Calculate and return the new filtered value.
+
+        Args:
+            current_value (float): The latest raw measurement.
+
+        Returns:
+            float: The filtered estimate.
+        """
+        # If this is the first measurement, trust it completely to avoid an initial lag spike
+        if self.last_estimate is None:
+            self.last_estimate = current_value
+        else:
+            # Apply the exponential moving average formula
+            self.last_estimate = (self.alpha * current_value) + ((1.0 - self.alpha) * self.last_estimate)
+
+        return self.last_estimate
+
+    def reset(self):
+        """
+        Reset the filter's state. Useful if the signal is lost and re-acquired.
+        """
+        self.last_estimate = None
+
+
+class VectorExponentialLowPassFilter:
+    """
+    An exponential low-pass filter compatible with scalars and NumPy arrays.
+    """
+
+    def __init__(self, alpha: float):
+        if not 0.0 <= alpha <= 1.0:
+            raise ValueError("Alpha must be between 0.0 and 1.0")
+
+        self.alpha = alpha
+        self.last_estimate = None
+
+    def __call__(self, current_value: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        # Convert inputs to numpy arrays if they are lists for safety
+        if isinstance(current_value, list):
+            current_value = np.array(current_value)
+
+        # First pass initialization
+        if self.last_estimate is None:
+            # Use copy() to prevent mutating the original input array later
+            self.last_estimate = current_value.copy() if isinstance(current_value, np.ndarray) else current_value
+        else:
+            # NumPy broadcasting handles the element-wise math automatically
+            self.last_estimate = (self.alpha * current_value) + ((1.0 - self.alpha) * self.last_estimate)
+
+        return self.last_estimate
+
+    def reset(self):
+        self.last_estimate = None

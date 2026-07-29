@@ -28,6 +28,8 @@ import neo_lab
 from . import PDControl
 from . import line_util as lu
 from . import filter_util as fu
+import threading
+import time
 
 # -- Constants --------------------------------------------------------------
 S_MIN = 200
@@ -52,13 +54,17 @@ _return_timer = 0.0
 _prev_roll_err = 0.0
 _prev_bottom_mean = None
 
-full_controller = PDControl.FullController(kp_yaw=0.5, kp_alt=1, max_yaw=1, max_throttle=0.8)
-roll_controller = PDControl.PDController(4.0, 0.0, 0.2)
-direction_filter = fu.VectorOneEuroFilter(_timer, np.zeros((4, 2)), min_cutoff=1.0, beta=0.0)
-mean_filter = fu.VectorOneEuroFilter(_timer, np.zeros((4, 2)), min_cutoff=1.0, beta=0.0)
+full_controller = PDControl.FullController(kp_yaw=0.05, kp_alt=1, max_yaw=1, max_throttle=0.8)
+roll_controller = PDControl.PDController(6.0, 0.0, 0.5)
+direction_filter = fu.VectorExponentialLowPassFilter(0.1)
+mean_filter = fu.VectorExponentialLowPassFilter(0.1)
 
 mode = "None"
 
+_vision_thread = None
+_vision_running = False
+# Initialize with safe hover commands
+_latest_cmd = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "throttle": 0.0}
 
 def reset():
     global _timer, _done
@@ -66,105 +72,126 @@ def reset():
     _done = False
 
 
-def run_line_follow(drone):
+def vision_loop(drone):
     global _timer, _done, _lap, ADVANCE_PITCH, _prev_roll_err, _return_timer, mode, _prev_bottom_mean
-    dt = drone.get_delta_time()
-    _image = drone.camera.get_downward_image_async()
-    image = cv2.resize(_image, (640, 480), interpolation=cv2.INTER_LINEAR)
-    _mask = neo_lab.bright_mask(image, S_MIN)
-    mask = lu.get_largest_component_optimized(_mask)
-    points = np.argwhere(mask == 255)
-    if len(points) < MIN_PIXELS or _return_timer != 0:
-        _return_timer += dt
-        if _return_timer > 3 and abs(_prev_roll_err) < 160:
-            _return_timer = 0.0
-            return False
-        else:
-            if len(points) > MIN_PIXELS and _return_timer > 2:
-                directions, means = lu.fit_lines(points)
-                roll_err = means[0][0] - COL_CENTER
-                _prev_roll_err = roll_err
+    global _vision_running, _latest_cmd
+
+    # Target 20 frames per second (0.05 seconds per loop)
+    target_fps = 20.0
+    loop_delay = 1.0 / target_fps
+
+    last_time = time.time()
+
+    while _vision_running:
+        loop_start_time = time.time()
+
+        # Calculate isolated delta time for the vision controllers
+        dt = loop_start_time - last_time
+        last_time = loop_start_time
+
+        _image = drone.camera.get_downward_image_async()
+
+        if _image is not None:
+            image = cv2.resize(_image, (640, 480), interpolation=cv2.INTER_LINEAR)
+            _mask = neo_lab.bright_mask(image, S_MIN)
+            mask = lu.get_largest_component_optimized(_mask)
+            points = np.argwhere(mask == 255)
+
+            if len(points) < MIN_PIXELS or _return_timer != 0:
+                _return_timer += dt
+                if _return_timer > 3 and abs(_prev_roll_err) < 160:
+                    _return_timer = 0.0
+                    continue
+                else:
+                    if len(points) > MIN_PIXELS and _return_timer > 2:
+                        directions, means = lu.fit_lines(points)
+                        roll_err = means[0][0] - COL_CENTER
+                        _prev_roll_err = roll_err
+                    else:
+                        roll_err = _prev_roll_err
+
+                    normalized_roll_err = roll_err / COL_CENTER
+                    roll = roll_controller.calculate_position(normalized_roll_err, dt)
+
+                    # UPDATE THREAD STATE INSTEAD OF SENDING
+                    _latest_cmd = {"pitch": 0.0, "roll": roll, "yaw": 0.0, "throttle": 0.0}
+                    continue
+
+            _directions, _means = lu.fit_lines(points, prev_bottom_mean=_prev_bottom_mean)
+            directions = direction_filter(_directions)
+            means = mean_filter(_means)
+            _prev_bottom_mean = means[3]
+
+            angles = np.arctan2(directions[:, 0], directions[:, 1])
+            angles = np.degrees(angles)
+            curvature = angles[0] - angles[3]
+            roll_err = means[3][0] - COL_CENTER
+            target_angle = angles[3]
+
+            if abs(curvature) < 30 and abs(roll_err) < 160:
+                curvature = 0
+                ADVANCE_PITCH = 0.4
+                roll_controller.kp = 1.5
+                roll_controller.max_output = 1
+                mode = "Straight"
             else:
-                roll_err = _prev_roll_err
+                ADVANCE_PITCH = 0.4
+                roll_controller.kp = 1.5
+                if abs(roll_err) > 160:
+                    ADVANCE_PITCH = 0.4
+                    curvature = 0.0
+                    roll_controller.kp = 1
+                    mode = "Roll Correct"
+                roll_controller.max_output = 1
+                mode = "Curve"
+
+            curvature_ff = -curvature * 0.008
+            full_controller.set_setpoint(_alt=0.5)
             normalized_roll_err = roll_err / COL_CENTER
-            roll = roll_controller.calculate_position(normalized_roll_err, dt)
-            drone.flight.send_pcmd(0, roll, 0, 0)
-            return False
-    _directions, _means = lu.fit_lines(points, prev_bottom_mean=_prev_bottom_mean)
-    directions = direction_filter(_timer, _directions)
-    means = mean_filter(_timer, _means)
-    _prev_bottom_mean = means[3]
-    # print(f"directions: {directions}, means: {means}")
-    angles = np.arctan(directions[:, 0] / directions[:, 1])
-    angles = np.degrees(angles)
-    curvature = angles[0] - angles[3]
-    roll_err = means[3][0] - COL_CENTER
-    target_angle = angles[3]
-    target_angle -= roll_err / 30
-    if abs(curvature) < 30 and abs(roll_err) < 160:
-        curvature = 0
-        ADVANCE_PITCH = 0.4
-        roll_controller.kp = 1.5
-        roll_controller.max_output = 1
-        mode = "Straight"
-    else:
-        ADVANCE_PITCH = 0.4
-        roll_controller.kp = 1.5
-        if abs(roll_err) > 160:
-            ADVANCE_PITCH = 0.4
-            curvature = 0.0
-            roll_controller.kp = 1
-            mode = "Roll Correct"
-        roll_controller.max_output = 1
-        mode = "Curve"
-    curvature_ff = -curvature * 0.008
-    full_controller.set_setpoint(_alt=0.5)
-    normalized_roll_err = roll_err / COL_CENTER
-    roll = -roll_controller.calculate_position(normalized_roll_err, dt) + curvature_ff
-    print(f"roll err norm: {normalized_roll_err}, target yaw: {target_angle}")
-    roll = drone_utils.clamp(roll, -10, 10)
-    output = full_controller.calculate(_alt=drone.physics.get_altitude(),
-                                       _alt_vel=drone.physics.get_linear_velocity()[1], _yaw=target_angle, dt=dt)
-    # print(f"roll={roll}, throttle={output[3]}, pitch={ADVANCE_PITCH}, yaw={output[2]}")
-    drone.flight.send_pcmd(ADVANCE_PITCH, roll, output[2], output[3])
-    _prev_roll_err = roll_err
-    return None
+            roll = -roll_controller.calculate_position(normalized_roll_err, dt) + curvature_ff
+            roll = drone_utils.clamp(roll, -10, 10)
+
+            output = full_controller.calculate(_alt=drone.physics.get_altitude(),
+                                               _alt_vel=drone.physics.get_linear_velocity()[1],
+                                               _yaw=target_angle, dt=dt)
+
+            # UPDATE THREAD STATE INSTEAD OF SENDING
+            _latest_cmd = {"pitch": ADVANCE_PITCH, "roll": roll, "yaw": output[2], "throttle": output[3]}
+            _prev_roll_err = roll_err
+
+        # Small sleep to prevent this loop from maxing out a CPU core
+        # --- THE RATE LIMITER ---
+        # Calculate how long the math actually took
+        math_duration = time.time() - loop_start_time
+
+        # Sleep for whatever time is remaining to hit our exact 20Hz target
+        time_to_sleep = loop_delay - math_duration
+        if time_to_sleep > 0:
+            time.sleep(time_to_sleep)
 
 
 def update(drone):
-    global _timer, _done, _was_green, _lap, ADVANCE_PITCH, _prev_roll_err, _return_timer
+    global _timer, _done, _vision_thread, _vision_running, _latest_cmd
+
     if _done:
+        _vision_running = False  # Tell the thread loop to shut down safely
         return True
-    drone.flight.stop()  # hover in place
+
+    # Initialize the background thread on the first tick
+    if _vision_thread is None:
+        _vision_running = True
+        # Setting daemon=True ensures the thread dies automatically if the main program crashes
+        _vision_thread = threading.Thread(target=vision_loop, args=(drone,), daemon=True)
+        _vision_thread.start()
 
     _timer += drone.get_delta_time()
-    run_line_follow(drone)
-    # full_controller.set_setpoint(_fwd=5, _rgt=0, _yaw=0, _alt=0.5)
-    # output = full_controller.calculate(_fwd=drone.physics.get_position()[0], _rgt=drone.physics.get_position()[2], _alt=drone.physics.get_altitude(), _alt_vel=drone.physics.get_linear_velocity()[1], _yaw=drone.physics.get_attitude()[1])
-    # drone.flight.send_pcmd(output[0], output[1], output[2], output[3])
-    # print(f"alt={drone.physics.get_altitude()}")
+
+    # Fast-publish the most recent command calculated by the vision thread
+    drone.flight.send_pcmd(
+        _latest_cmd["pitch"],
+        _latest_cmd["roll"],
+        _latest_cmd["yaw"],
+        _latest_cmd["throttle"]
+    )
 
     return _done
-
-
-if __name__ == "__main__":
-    _drone = drone_core.create_drone()
-    _launcher = neo_lab.Launcher(3.0)
-
-
-    def start():
-        _launcher.reset()
-        reset()
-        print("Step 2: Fit a Line (Least Squares)")
-
-
-    def _update():
-        if not _launcher.done:  # arm + climb to a safe height first
-            _launcher.update(_drone)
-            return
-        if update(_drone):
-            _drone.flight.land()
-
-
-    _drone.set_start_update(start, _update)
-    _drone.go()
