@@ -59,8 +59,8 @@ _prev_bottom_mean = None
 
 full_controller = PDControl.FullController(kp_yaw=0.05, kp_alt=1, max_yaw=1, max_throttle=0.8)
 roll_controller = PDControl.PDController(6.0, 0.0, 0.5)
-direction_filter = fu.VectorExponentialLowPassFilter(0.1)
-mean_filter = fu.VectorExponentialLowPassFilter(0.1)
+direction_filter = fu.VectorExponentialLowPassFilter(0.8)
+mean_filter = fu.VectorExponentialLowPassFilter(0.8)
 
 mode = "None"
 
@@ -130,8 +130,9 @@ def line_control_loop(drone):
             angles = np.arctan2(directions[:, 0], directions[:, 1])
             angles = np.degrees(angles)
             curvature = angles[0] - angles[3]
-            roll_err = means[3][0] - COL_CENTER
-            target_angle = angles[3]
+            roll_err = means[0][0] - COL_CENTER
+            target_angle = angles[0]
+            print(f"target angle: {target_angle}")
 
             if abs(curvature) < 30 and abs(roll_err) < 160:
                 curvature = 0
