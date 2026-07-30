@@ -83,11 +83,11 @@ def draw_center_point(image, center):
 # Shows the output of the image detection
 def debug(corners, ids, rejected, image, center):
     if ids is None:
-        print("No markers detected")
+        # print("No markers detected")
         cv2.aruco.drawDetectedMarkers(image, rejected, borderColor=(0, 0, 255))
         cv2.imwrite(OUTPUT_PATH, image)
     else:
-        print(f"{len(ids)} markers detected")
+        # print(f"{len(ids)} markers detected")
         cv2.aruco.drawDetectedMarkers(image, corners, ids, borderColor=(0, 255, 0))
         draw_marker_borders(image, corners, thickness=16)
         draw_center_point(image, center)
@@ -134,20 +134,6 @@ def process_two_tags_opposite(tag_a, tag_b):
     x_relative = (u_center - cx) * z_distance / fx
     y_relative = (v_center - cy) * z_distance / fy
 
-    corner_idx_product = (ID_TO_CORNER_IDX[tag_a.tag_id] + 1) * (ID_TO_CORNER_IDX[tag_b.tag_id] + 1)
-    if corner_idx_product == 2:
-        x_relative -= REAL_GATE_RADIUS / 2
-        y_relative += REAL_GATE_RADIUS / 2
-    elif corner_idx_product == 6:
-        x_relative -= REAL_GATE_RADIUS / 2
-        y_relative -= REAL_GATE_RADIUS / 2
-    elif corner_idx_product == 12:
-        x_relative += REAL_GATE_RADIUS / 2
-        y_relative -= REAL_GATE_RADIUS / 2
-    else:
-        x_relative += REAL_GATE_RADIUS / 2
-        y_relative += REAL_GATE_RADIUS / 2
-
     relative_height = - y_relative
 
     return relative_height, z_distance, x_relative
@@ -168,6 +154,20 @@ def process_two_tags_diagonal(tag_a, tag_b):
     # 3. Un-project to find physical X and Y relative to camera
     x_relative = (u_center - cx) * z_distance / fx
     y_relative = (v_center - cy) * z_distance / fy
+
+    corner_idx_product = (ID_TO_CORNER_IDX[tag_a.id] + 1) * (ID_TO_CORNER_IDX[tag_b.id] + 1)
+    if corner_idx_product == 2:
+        x_relative -= REAL_GATE_RADIUS / 2
+        y_relative += REAL_GATE_RADIUS / 2
+    elif corner_idx_product == 6:
+        x_relative -= REAL_GATE_RADIUS / 2
+        y_relative -= REAL_GATE_RADIUS / 2
+    elif corner_idx_product == 12:
+        x_relative += REAL_GATE_RADIUS / 2
+        y_relative -= REAL_GATE_RADIUS / 2
+    else:
+        x_relative += REAL_GATE_RADIUS / 2
+        y_relative += REAL_GATE_RADIUS / 2
 
     # OpenCV Y is DOWN. Invert it so positive is UP.
     relative_height = -y_relative
@@ -247,21 +247,20 @@ def process_frame(detected_tags, current_time, altitude, forward_velocity):
             true_distance = np.linalg.norm(tvec)
             gate_measurements[gate_id] = GateMeasurement(lateral_offset, relative_height + altitude, true_distance, forward_velocity, tag_count, current_time)
 
-        elif tag_count == 3:
-            # Good case: 3 points visible
-            success, rvec, tvec = cv2.solvePnP(
-                obj_points_visible, img_points_visible,
-                camera_matrix, dist_coeffs, flags=cv2.SOLVEPNP_AP3P
-            )
-            lateral_offset = tvec[0][0]
-            relative_height = -tvec[1][0]
-            true_distance = np.linalg.norm(tvec)
-            gate_measurements[gate_id] = GateMeasurement(lateral_offset, relative_height + altitude, true_distance, forward_velocity, tag_count, current_time)
-
-        elif tag_count == 2:
+        elif tag_count == 3 or tag_count == 2:
             keys = list(tags.keys())
-            if abs(keys[0] - keys[1]) == 2:
-                rel_h, z_dist, lat_off = process_two_tags_opposite(tags[keys[0]], tags[keys[1]])
+            opposite_pair = None
+            for i in range(len(keys)):
+                for j in range(i + 1, len(keys)):
+                    if abs(keys[i] - keys[j]) == 2:
+                        opposite_pair = (keys[i], keys[j])
+                        break
+            if opposite_pair is not None:
+                # We found opposite tags! Run the stable Wide-Baseline math
+                tag_a = tags[opposite_pair[0]]
+                tag_b = tags[opposite_pair[1]]
+
+                abs_h, z_dist, lat_off = process_two_tags_opposite(tag_a, tag_b)
                 gate_measurements[gate_id] = GateMeasurement(lat_off, rel_h + altitude, z_dist, forward_velocity, tag_count, current_time)
             else:
                 first_key = keys[0]
@@ -334,7 +333,7 @@ class Gate:
         self.altitude_filter.predict(dt)
 
     def __str__(self):
-        return f"height: {self.altitude_filter.x[0, 0]}, lateral offset: {self.lateral_offset_filter.x[0, 0]}"
+        return f"height: {self.altitude_filter.x[0, 0]}, lateral offset: {self.lateral_offset_filter.x[0, 0]}, distance = {self.distance_filter.x[0, 0]}"
 
 class GateMeasurement:
     def __init__(self, lateral_offset_measurement, altitude_measurement, distance_measurement, forward_velocity, tag_count, current_time):

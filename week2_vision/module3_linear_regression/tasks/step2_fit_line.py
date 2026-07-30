@@ -52,7 +52,7 @@ _gate_fly_through_running = False
 _gate_fly_through = fu.BooleanDebouncer(delay_seconds=0.1)
 _gate_fly_through_timer = 0.0
 _gates = dict()
-for i in range(len(gd.NUM_GATES)):
+for i in range(gd.NUM_GATES):
     _gates[i] = gd.Gate(0.0)
 
 
@@ -121,7 +121,7 @@ def line_control_loop(drone):
             curvature = angles[0] - angles[3]
             roll_err = means[0][0] - COL_CENTER
             target_angle = angles[0]
-            print(f"target angle: {target_angle}")
+            # print(f"target angle: {target_angle}")
 
             if abs(curvature) < 30 and abs(roll_err) < 160:
                 curvature = 0
@@ -148,7 +148,7 @@ def line_control_loop(drone):
             output = full_controller.calculate(_alt=drone.physics.get_altitude(),
                                                _alt_vel=drone.physics.get_linear_velocity()[1],
                                                _yaw=target_angle, dt=dt)
-            print(f"roll: {roll}, yaw: {output[2]}")
+            # print(f"roll: {roll}, yaw: {output[2]}")
             # UPDATE THREAD STATE INSTEAD OF SENDING
             set_flight_command("LINE_FOLLOW", ADVANCE_PITCH, roll, output[2], output[3])
             _prev_roll_err = roll_err
@@ -215,11 +215,12 @@ def gate_detect_loop(drone):
             image = cv2.resize(_image, (640, 480), interpolation=cv2.INTER_LINEAR)
             gate_measurements = gd.detect_gates(image, _timer, drone.physics.get_altitude(),
                                                 drone.physics.get_linear_velocity()[2])
-            for (gate_id, gate_measurement) in gate_measurements.items():
-                if gate_measurement is not None:
-                    _gates[gate_id].update(gate_measurement)
-                else:
-                    _gates[gate_id].predict()
+            if gate_measurements is not None:
+                for (gate_id, gate_measurement) in gate_measurements.items():
+                    if gate_measurement is not None:
+                        _gates[gate_id].update(gate_measurement)
+                    else:
+                        _gates[gate_id].predict()
 
         # Small sleep to prevent this loop from maxing out a CPU core
         # --- THE RATE LIMITER ---
