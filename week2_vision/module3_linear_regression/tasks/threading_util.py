@@ -2,11 +2,11 @@ import threading
 
 
 class PausableThread(threading.Thread):
-    def __init__(self, target=None, args=(), kwargs=None, daemon=None, name=None):
+    def __init__(self, target=None, args=(), kwargs=None, daemon=None, name=None, paused=False):
         # Forward all standard arguments to the base Thread constructor
         super().__init__(target=target, args=args, kwargs=kwargs, daemon=daemon, name=name)
         self._can_run = threading.Event()
-        self._can_run.set()  # Start in unpaused state
+        if not paused: self._can_run.set()  # Start in unpaused state
         self._stop_event = threading.Event()
 
     def run(self):

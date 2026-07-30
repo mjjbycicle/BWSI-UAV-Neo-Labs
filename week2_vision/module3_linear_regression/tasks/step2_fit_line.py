@@ -1,13 +1,3 @@
-"""
-MIT BWSI Autonomous Drone Racing Course - UAV Neo
-GNU General Public License v3.0
-
-Week 2/3 Lab — Step 2: Fit a Line (Least Squares)
-Fit y = m*x + b to the colored line pixels with linear regression.
-"""
-
-# -- Course setup: makes the shared `neo_lab` helper importable.
-#    You don't need to read or change this block. --
 import os as _os
 import sys as _sys
 import threading
@@ -16,13 +6,7 @@ import cv2.aruco
 import numpy as np
 
 import drone_utils
-
-_d = _os.path.dirname(_os.path.realpath(__file__))
-while _os.path.basename(_d) != "labs" and _os.path.dirname(_d) != _d:
-    _d = _os.path.dirname(_d)
-if _d not in _sys.path:
-    _sys.path.insert(0, _d)
-import neo_lab
+from . import neo_lab
 from . import PDControl
 from . import line_util as lu
 from . import filter_util as fu
@@ -126,7 +110,7 @@ def line_control_loop(drone):
                     roll = roll_controller.calculate_position(normalized_roll_err, dt)
 
                     # UPDATE THREAD STATE INSTEAD OF SENDING
-                    _latest_cmd = {"pitch": 0.0, "roll": roll, "yaw": 0.0, "throttle": 0.0}
+                    set_flight_command("LINE_FOLLOW", 0, roll, 0, 0)
                     continue
 
             _directions, _means = lu.fit_lines(points, prev_bottom_mean=_prev_bottom_mean)
@@ -273,39 +257,35 @@ def update(drone):
         return True
 
     # Initialize the background thread on the first tick
-    if _line_follow_thread is None:
+    if _line_follow_thread is None or _gate_detect_thread is None or _gate_fly_through_thread is None:
+        # 1. Start Line Follower (Active)
         _line_follow_running = True
         _line_follow_thread = tu.PausableThread(target=line_control_loop, args=(drone,), daemon=True)
         _line_follow_thread.start()
 
-    if _gate_detect_thread is None:
+        # 2. Start Gate Detector (Active)
         _gate_detect_running = True
         _gate_detect_thread = tu.PausableThread(target=gate_detect_loop, args=(drone,), daemon=True)
         _gate_detect_thread.start()
 
+        # 3. Start Gate Fly-Through (Paused!)
+        _gate_fly_through_running = True
+        _gate_fly_through_thread = tu.PausableThread(target=gate_fly_through_loop, args=(drone,), daemon=True, paused=True)
+        _gate_fly_through_thread.start()
+
     if _gate_fly_through.value:
-        # 1. Instantly switch authority so the line follower is locked out
+        # Instantly switch authority
         with _command_lock:
             _active_flight_mode = "GATE_FLY_THROUGH"
-
-        # 2. Tell the threads to pause/resume in the background
         _line_follow_thread.pause()
-        if _gate_fly_through_thread is None:
-            _gate_fly_through_running = True
-            _gate_fly_through_thread = tu.PausableThread(target=gate_fly_through_loop, args=(drone,), daemon=True)
-            _gate_fly_through_thread.start()
-        else:
-            _gate_fly_through_thread.resume()
+        _gate_fly_through_thread.resume()
 
     else:
-        # 1. Instantly switch authority back to the line follower
+        # Instantly switch authority back
         with _command_lock:
             _active_flight_mode = "LINE_FOLLOW"
-
-        # 2. Tell the threads to pause/resume in the background
         _line_follow_thread.resume()
-        if _gate_fly_through_thread is not None:
-            _gate_fly_through_thread.pause()
+        _gate_fly_through_thread.pause()
 
 
     _timer += drone.get_delta_time()
