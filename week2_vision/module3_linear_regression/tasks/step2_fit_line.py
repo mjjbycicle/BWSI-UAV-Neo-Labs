@@ -1,18 +1,16 @@
-import os as _os
-import sys as _sys
 import threading
+import time
 
 import cv2.aruco
 import numpy as np
 
 import drone_utils
-from . import neo_lab
 from . import PDControl
-from . import line_util as lu
 from . import filter_util as fu
 from . import gate_detection as gd
+from . import line_util as lu
+from . import neo_lab
 from . import threading_util as tu
-import time
 
 # -- Constants --------------------------------------------------------------
 S_MIN = 200
@@ -35,8 +33,8 @@ _done = False
 
 full_controller = PDControl.FullController(kp_yaw=0.05, kp_alt=1, max_yaw=1, max_throttle=0.8)
 roll_controller = PDControl.PDController(6.0, 0.0, 0.5)
-direction_filter = fu.VectorExponentialLowPassFilter(0.8)
-mean_filter = fu.VectorExponentialLowPassFilter(0.8)
+direction_filter = fu.VectorExponentialLowPassFilter(0.95)
+mean_filter = fu.VectorExponentialLowPassFilter(0.95)
 
 mode = "None"
 _command_lock = threading.Lock()
@@ -182,8 +180,6 @@ def gate_fly_through_loop(drone):
         dt = loop_start_time - last_time
         last_time = loop_start_time
 
-
-
         # UPDATE THREAD STATE INSTEAD OF SENDING
         set_flight_command("GATE_FLY_THROUGH", 0.5, 0.0, 0.0, 0.0)
 
@@ -191,15 +187,13 @@ def gate_fly_through_loop(drone):
         # --- THE RATE LIMITER ---
         # Calculate how long the math actually took
         math_duration = time.time() - loop_start_time
-
-        # Sleep for whatever time is remaining to hit our exact 20Hz target
         time_to_sleep = loop_delay - math_duration
         if time_to_sleep > 0:
             time.sleep(time_to_sleep)
 
 
 def gate_detect_loop(drone):
-    global _timer, _done, _lap, ADVANCE_PITCH, _prev_roll_err, _return_timer, mode, _prev_bottom_mean, _closest_gate, _target_height
+    global _timer, _done, mode, _closest_gate, _target_height
     global _line_follow_running, _latest_cmd
 
     # Target 20 frames per second (0.05 seconds per loop)
@@ -219,13 +213,13 @@ def gate_detect_loop(drone):
 
         if _image is not None:
             image = cv2.resize(_image, (640, 480), interpolation=cv2.INTER_LINEAR)
-            gate_measurements = gd.detect_gates(image, _timer, drone.physics.get_altitude(), drone.physics.get_linear_velocity()[2])
+            gate_measurements = gd.detect_gates(image, _timer, drone.physics.get_altitude(),
+                                                drone.physics.get_linear_velocity()[2])
             for (gate_id, gate_measurement) in gate_measurements.items():
                 if gate_measurement is not None:
                     _gates[gate_id].update(gate_measurement)
                 else:
                     _gates[gate_id].predict()
-
 
         # Small sleep to prevent this loop from maxing out a CPU core
         # --- THE RATE LIMITER ---
@@ -245,7 +239,8 @@ def update_gate_distances(drone):
 
 
 def update(drone):
-    global _timer, _done, _line_follow_thread, _line_follow_running, _latest_cmd, _gate_detect_running, _gate_detect_thread, _gate_fly_through_thread, _gate_fly_through, _gate_fly_through_running
+    global _timer, _done, _line_follow_thread, _line_follow_running, _latest_cmd
+    global _gate_detect_running, _gate_detect_thread, _gate_fly_through_thread, _gate_fly_through, _gate_fly_through_running
     global _active_flight_mode
 
     update_gate_distances(drone)
@@ -270,7 +265,8 @@ def update(drone):
 
         # 3. Start Gate Fly-Through (Paused!)
         _gate_fly_through_running = True
-        _gate_fly_through_thread = tu.PausableThread(target=gate_fly_through_loop, args=(drone,), daemon=True, paused=True)
+        _gate_fly_through_thread = tu.PausableThread(target=gate_fly_through_loop, args=(drone,), daemon=True,
+                                                     paused=True)
         _gate_fly_through_thread.start()
 
     if _gate_fly_through.value:
@@ -286,7 +282,6 @@ def update(drone):
             _active_flight_mode = "LINE_FOLLOW"
         _line_follow_thread.resume()
         _gate_fly_through_thread.pause()
-
 
     _timer += drone.get_delta_time()
 

@@ -27,4 +27,4 @@ from tasks import (
 neo_lab.run_module("Week 2 · Module 3 — Linear Regression (Line Following)", [
     ("Step 1: Detect the Line Pixels", step1_detect_line),
     ("Step 2: Fit a Line (Least Squares)", step2_fit_line)
-], launch=False, launch_height = 6, update_slow=lambda: print(step2_fit_line.mode))
+], launch=False, launch_height = 6, update_slow=lambda: print(step2_fit_line._gates))

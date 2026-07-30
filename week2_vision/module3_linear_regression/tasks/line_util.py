@@ -5,7 +5,6 @@ from scipy.sparse.csgraph import minimum_spanning_tree, depth_first_order
 from scipy.spatial import cKDTree
 import numpy as np
 import cv2
-import neo_lab
 
 def downsample_points_grid(points, target_points=1500):
     x_range, y_range = np.ptp(points, axis=0)

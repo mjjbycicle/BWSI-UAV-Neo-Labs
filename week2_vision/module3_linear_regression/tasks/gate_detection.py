@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from . import filter_util as fu
+# import filter_util as fu
 
 TEST_PATH = "gate_images/aruco_test_image8.jpeg"
 OUTPUT_PATH = "gate_images/debug_output.jpeg"
@@ -17,8 +18,8 @@ IMAGE_WIDTH = 640
 REAL_GATE_DIAMETER = 2.0
 REAL_GATE_RADIUS = 1.0
 
-HORIZONTAL_TAGS = [4, 8]
-VERTICAL_TAGS = [3, 7]
+HORIZONTAL_TAGS = [4, 8] #left, right ...
+VERTICAL_TAGS = [7, 3] #top, bottom ...
 TOP_TAGS = VERTICAL_TAGS[::2]
 BOTTOM_TAGS = VERTICAL_TAGS[1::2]
 LEFT_TAGS = HORIZONTAL_TAGS[::2]
@@ -48,8 +49,8 @@ OBJ_POINTS_FULL = np.array([
 
 # 2. Camera Intrinsics (Example values for 640x480, replace with your RealSense data)
 camera_matrix = np.array([
-    [386.0, 0.0, 320.0],  # fx, 0, cx
-    [0.0, 386.0, 240.0],  # 0, fy, cy
+    [FOCAL_PX, 0.0, 320.0],  # fx, 0, cx
+    [0.0, FOCAL_PX, 240.0],  # 0, fy, cy
     [0.0, 0.0, 1.0]
 ], dtype=np.float32)
 
@@ -142,7 +143,7 @@ def process_single_tag(tag, corner_idx):
     cx, cy = camera_matrix[0,2], camera_matrix[1,2]
 
     # 1. Distance (Z) using single tag width (0.1m)
-    z_distance = (fx * 0.1) / tag.pixel_width
+    z_distance = (fx * REAL_TAG_SIZE) / tag.pixel_width
 
     # 2. Un-project the tag's center pixel to find the tag's physical location
     u_tag, v_tag = tag.center_pixel
@@ -159,13 +160,13 @@ def process_single_tag(tag, corner_idx):
     gate_lateral_offset = tag_lateral_offset
 
     if corner_idx == 0:   # Top Tag: Gate is 0.75m below it
-        gate_relative_height -= 0.75
+        gate_relative_height -= REAL_GATE_RADIUS
     elif corner_idx == 2: # Bottom Tag: Gate is 0.75m above it
-        gate_relative_height += 0.75
+        gate_relative_height += REAL_GATE_RADIUS
     elif corner_idx == 1: # Right Tag: Gate is 0.75m to the left
-        gate_lateral_offset -= 0.75
+        gate_lateral_offset -= REAL_GATE_RADIUS
     elif corner_idx == 3: # Left Tag: Gate is 0.75m to the right
-        gate_lateral_offset += 0.75
+        gate_lateral_offset += REAL_GATE_RADIUS
 
     return gate_relative_height, z_distance, gate_lateral_offset
 
@@ -323,7 +324,7 @@ def parse_aruco_returns(corners, ids):
     if ids is None:
         return detected_tags
     for i in range(len(ids)):
-        tag_id = int(ids[i][0])
+        tag_id = int(ids[i])
         marker_corners = corners[i][0]
         center_x = np.mean(marker_corners[:, 0])
         center_y = np.mean(marker_corners[:, 1])
