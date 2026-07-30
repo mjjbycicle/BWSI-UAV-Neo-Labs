@@ -178,16 +178,20 @@ def gate_detect_loop(drone):
                         closest_val = _gates[gate_id].distance_filter.x[0, 0]
                         closest_gate = _gates[gate_id]
 
-
-                _accepting_new_height = closest_gate.id == _prev_closest_gate.id
-
-                
-                if closest_val <= CLOSEST_GATE_THRESHOLD and _accepting_new_height:
+                # Works as long as the gates are far enough apart. 
+                # The drone would need to be able to get to the target height by the time it travels the threshold distance
+                if closest_val <= CLOSEST_GATE_THRESHOLD:
                     _target_height = closest_gate.altitude_filter.x[0, 0]
 
+                """
+                Experimental algorithm in case the above code doesn't work
+                _accepting_new_height = closest_gate.id == _prev_closest_gate.id
 
-
-
+                if closest_val <= CLOSEST_GATE_THRESHOLD:
+                    _accepting_new_height = True
+                    if _accepting_new_height:
+                        _target_height = closest_gate.altitude_filter.x[0, 0]
+                """
 
 
         # Small sleep to prevent this loop from maxing out a CPU core
