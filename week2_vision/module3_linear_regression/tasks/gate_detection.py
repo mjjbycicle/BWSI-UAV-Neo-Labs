@@ -11,7 +11,8 @@ DETECTOR = cv2.aruco.ArucoDetector(ARUCO_DICT, ARUCO_PARAMS)
 #Idk how accurate the values are below
 FOCAL_PX = 615.3            # Camera focal length in pixels (approx calibration)
 REAL_TAG_SIZE = 0.19        # Physical corner-tag side length, meters (approx)
-MAX_DETECTION_DIST = 4.0    # Distance threshold to detect tags
+IMAGE_HEIGHT = 480
+IMAGE_WIDTH = 640
 
 HORIZONTAL_TAGS = [4, 8]
 VERTICAL_TAGS = [3, 7]
@@ -73,6 +74,13 @@ def marker_distance(corners):
         distances.append(FOCAL_PX * REAL_TAG_SIZE / np.mean(side_lengths))
 
     return np.mean(distances) # Averages the distances between each marker and the drone
+
+
+def gate_height(gate):
+    if gate.cx == None or gate.cy == None:
+        return None
+    height_px = gate.cy - IMAGE_HEIGHT / 2
+    return height_px * gate.distance / FOCAL_PX
 
 
 # Returns the distance each gate is from the camera in meters

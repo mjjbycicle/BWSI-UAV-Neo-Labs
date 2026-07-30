@@ -6,7 +6,6 @@ Week 2/3 Lab — Step 2: Fit a Line (Least Squares)
 Fit y = m*x + b to the colored line pixels with linear regression.
 """
 
-import bisect
 # -- Course setup: makes the shared `neo_lab` helper importable.
 #    You don't need to read or change this block. --
 import os as _os
@@ -15,11 +14,8 @@ import sys as _sys
 import cv2.aruco
 import numpy as np
 
-import drone_core
 import drone_utils
-import pyrealsense2 as rs
-
-from camera import Camera
+from physics import Physics
 
 _d = _os.path.dirname(_os.path.realpath(__file__))
 while _os.path.basename(_d) != "labs" and _os.path.dirname(_d) != _d:
@@ -31,6 +27,7 @@ from . import PDControl
 from . import line_util as lu
 from . import filter_util as fu
 from . import gate_detection as gd
+from . import threading_util as tu
 import threading
 import time
 
@@ -64,12 +61,18 @@ mean_filter = fu.VectorExponentialLowPassFilter(0.8)
 
 mode = "None"
 
-_vision_thread = None
-_vision_running = False
+_line_follow_thread = None
+_line_follow_running = False
 _latest_cmd = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "throttle": 0.0}
-_gate_thread = None
-_gate_running = False
+_gate_detect_thread = None
+_gate_detect_running = False
 _closest_gate = None
+_target_height = 0.5
+_gate_fly_through_thread = None
+_gate_fly_through_running = False
+_gate_fly_through = fu.BooleanDebouncer(delay_seconds=0.1)
+_gate_fly_through_timer = 0.0
+
 
 def reset():
     global _timer, _done
@@ -78,8 +81,8 @@ def reset():
 
 
 def line_control_loop(drone):
-    global _timer, _done, _lap, ADVANCE_PITCH, _prev_roll_err, _return_timer, mode, _prev_bottom_mean
-    global _vision_running, _latest_cmd
+    global _timer, _done, _lap, ADVANCE_PITCH, _prev_roll_err, _return_timer, mode, _prev_bottom_mean, _target_height
+    global _line_follow_running, _latest_cmd
 
     # Target 20 frames per second (0.05 seconds per loop)
     target_fps = 20.0
@@ -87,7 +90,7 @@ def line_control_loop(drone):
 
     last_time = time.time()
 
-    while _vision_running:
+    while _line_follow_running:
         loop_start_time = time.time()
 
         # Calculate isolated delta time for the vision controllers
@@ -152,7 +155,7 @@ def line_control_loop(drone):
                 mode = "Curve"
 
             curvature_ff = -curvature * 0.008
-            full_controller.set_setpoint(_alt=0.5)
+            full_controller.set_setpoint(_alt=_target_height)
             normalized_roll_err = roll_err / COL_CENTER
             roll = -roll_controller.calculate_position(normalized_roll_err, dt) + curvature_ff
             roll = drone_utils.clamp(roll, -1, 1)
@@ -175,9 +178,41 @@ def line_control_loop(drone):
             time.sleep(time_to_sleep)
 
 
+def gate_fly_through_loop(drone):
+    global _gate_fly_through, _gate_fly_through_timer, _line_follow_running, _latest_cmd
+
+    # Target 20 frames per second (0.05 seconds per loop)
+    target_fps = 60.0
+    loop_delay = 1.0 / target_fps
+
+    last_time = time.time()
+
+    while _gate_fly_through_running:
+        loop_start_time = time.time()
+
+        # Calculate isolated delta time for the vision controllers
+        dt = loop_start_time - last_time
+        last_time = loop_start_time
+
+
+
+        # UPDATE THREAD STATE INSTEAD OF SENDING
+        _latest_cmd = {"pitch": 0.5, "roll": 0.0, "yaw": 0.0, "throttle": 0.0}
+
+        # Small sleep to prevent this loop from maxing out a CPU core
+        # --- THE RATE LIMITER ---
+        # Calculate how long the math actually took
+        math_duration = time.time() - loop_start_time
+
+        # Sleep for whatever time is remaining to hit our exact 20Hz target
+        time_to_sleep = loop_delay - math_duration
+        if time_to_sleep > 0:
+            time.sleep(time_to_sleep)
+
+
 def gate_detect_loop(drone):
-    global _timer, _done, _lap, ADVANCE_PITCH, _prev_roll_err, _return_timer, mode, _prev_bottom_mean, _closest_gate
-    global _vision_running, _latest_cmd
+    global _timer, _done, _lap, ADVANCE_PITCH, _prev_roll_err, _return_timer, mode, _prev_bottom_mean, _closest_gate, _target_height
+    global _line_follow_running, _latest_cmd
 
     # Target 20 frames per second (0.05 seconds per loop)
     target_fps = 20.0
@@ -185,7 +220,7 @@ def gate_detect_loop(drone):
 
     last_time = time.time()
 
-    while _vision_running:
+    while _line_follow_running:
         loop_start_time = time.time()
 
         # Calculate isolated delta time for the vision controllers
@@ -198,6 +233,8 @@ def gate_detect_loop(drone):
             image = cv2.resize(_image, (640, 480), interpolation=cv2.INTER_LINEAR)
             gate = gd.detect_gates(image)
             _closest_gate = gate
+            if _closest_gate is not None:
+                _target_height = drone.physics.get_altitude() + gd.gate_height(_closest_gate)
             print(gate)
 
         # Small sleep to prevent this loop from maxing out a CPU core
@@ -211,26 +248,39 @@ def gate_detect_loop(drone):
             time.sleep(time_to_sleep)
 
 
-
 def update(drone):
-    global _timer, _done, _vision_thread, _vision_running, _latest_cmd, _gate_running, _gate_thread
+    global _timer, _done, _line_follow_thread, _line_follow_running, _latest_cmd, _gate_detect_running, _gate_detect_thread, _gate_fly_through_thread, _gate_fly_through, _gate_fly_through_running
 
     if _done:
-        _vision_running = False  # Tell the thread loop to shut down safely
-        _gate_running = False
+        _line_follow_running = False  # Tell the thread loop to shut down safely
+        _gate_detect_running = False
+        _gate_fly_through_running = False
         return True
 
     # Initialize the background thread on the first tick
-    if _vision_thread is None:
-        _vision_running = True
-        # Setting daemon=True ensures the thread dies automatically if the main program crashes
-        _vision_thread = threading.Thread(target=line_control_loop, args=(drone,), daemon=True)
-        _vision_thread.start()
+    if _line_follow_thread is None:
+        _line_follow_running = True
+        _line_follow_thread = tu.PausableThread(target=line_control_loop, args=(drone,), daemon=True)
+        _line_follow_thread.start()
 
-    if _gate_thread is None:
-        _gate_running = True
-        _gate_thread = threading.Thread(target=gate_detect_loop, args=(drone,), daemon=True)
-        _gate_thread.start()
+    if _gate_detect_thread is None:
+        _gate_detect_running = True
+        _gate_detect_thread = tu.PausableThread(target=gate_detect_loop, args=(drone,), daemon=True)
+        _gate_detect_thread.start()
+
+    if _gate_fly_through.value:
+        _line_follow_thread.pause()
+        if _gate_fly_through_thread is None:
+            _gate_fly_through_running = True
+            _gate_fly_through_thread = tu.PausableThread(target=gate_fly_through_loop, args=(drone,), daemon=True)
+            _gate_fly_through_thread.start()
+        else:
+            _gate_fly_through_thread.resume()
+    else:
+        _line_follow_thread.resume()
+        if _gate_fly_through_thread is not None:
+            _gate_fly_through_thread.pause()
+
 
     _timer += drone.get_delta_time()
 

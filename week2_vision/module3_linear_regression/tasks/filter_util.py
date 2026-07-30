@@ -1,3 +1,4 @@
+import time
 from typing import Union
 
 import numpy as np
@@ -115,3 +116,89 @@ class VectorExponentialLowPassFilter:
 
     def reset(self):
         self.last_estimate = None
+
+
+class BooleanDebouncer:
+    def __init__(self, delay_seconds: float = 0.05):
+        self.delay = delay_seconds
+        self._stable_value = False
+        self._last_raw_value = False
+        self._change_time = time.time()
+
+    def update(self, raw_value: bool) -> bool:
+        now = time.time()
+        if raw_value != self._last_raw_value:
+            self._last_raw_value = raw_value
+            self._change_time = now
+        elif (now - self._change_time) >= self.delay:
+            self._stable_value = raw_value
+        return self._stable_value
+
+    @property
+    def value(self) -> bool:
+        return self._stable_value
+
+
+class GateHeightKalmanFilter:
+    def __init__(self, dt, initial_height, r_base=0.1):
+        """
+        Initializes the Linear Kalman Filter for gate height tracking.
+        dt: Time step between predictions (seconds)
+        initial_height: First rough guess of the gate height
+        r_base: Baseline measurement noise multiplier
+        """
+        # State vector: x = [height, velocity]^T
+        self.x = np.array([[initial_height],
+                           [0.0]])
+
+        # State transition matrix (F) - Constant Velocity Model
+        self.F = np.array([[1.0, dt],
+                           [0.0, 1.0]])
+
+        # Measurement matrix (H) - We only measure height
+        self.H = np.array([[1.0, 0.0]])
+
+        # State Covariance matrix (P) - High initial uncertainty
+        self.P = np.array([[500.0, 0.0],
+                           [0.0, 500.0]])
+
+        # Process Noise Covariance (Q) - Adjust based on expected drone drift
+        self.Q = np.array([[0.1, 0.0],
+                           [0.0, 0.1]])
+
+        # Base multiplier for measurement noise
+        self.r_base = r_base
+
+    def predict(self):
+        """Predicts the next state. Call this every flight controller loop."""
+        # x = F * x
+        self.x = np.dot(self.F, self.x)
+
+        # P = F * P * F^T + Q
+        self.P = np.dot(np.dot(self.F, self.P), self.F.T) + self.Q
+
+        return self.x[0, 0]  # Return predicted height
+
+    def update(self, measured_height, distance_to_gate):
+        """Updates the state with a new camera measurement."""
+        # Dynamic R: Noise increases quadratically with distance
+        R = np.array([[self.r_base * (distance_to_gate ** 2)]])
+
+        # Measurement residual: y = z - H * x
+        z = np.array([[measured_height]])
+        y = z - np.dot(self.H, self.x)
+
+        # Innovation covariance: S = H * P * H^T + R
+        S = np.dot(np.dot(self.H, self.P), self.H.T) + R
+
+        # Kalman Gain: K = P * H^T * S^-1
+        K = np.dot(np.dot(self.P, self.H.T), np.linalg.inv(S))
+
+        # Update state: x = x + K * y
+        self.x = self.x + np.dot(K, y)
+
+        # Update covariance: P = (I - K * H) * P
+        I = np.eye(self.P.shape[0])
+        self.P = np.dot((I - np.dot(K, self.H)), self.P)
+
+        return self.x[0, 0]  # Return updated height
