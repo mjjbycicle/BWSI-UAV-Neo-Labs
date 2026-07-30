@@ -170,7 +170,7 @@ def process_single_tag(tag, corner_idx):
     return gate_relative_height, z_distance, gate_lateral_offset
 
 
-def process_frame(detected_tags, current_time, altitude):
+def process_frame(detected_tags, current_time, altitude, forward_velocity):
     gates_in_view = dict()
     gate_measurements = dict()
     for tag in detected_tags:
@@ -207,7 +207,7 @@ def process_frame(detected_tags, current_time, altitude):
             lateral_offset = tvec[0][0]
             relative_height = -tvec[1][0]
             true_distance = np.linalg.norm(tvec)
-            gate_measurements[gate_id] = GateMeasurement(lateral_offset, relative_height + altitude, true_distance, tag_count, current_time)
+            gate_measurements[gate_id] = GateMeasurement(lateral_offset, relative_height + altitude, true_distance, forward_velocity, tag_count, current_time)
 
         elif tag_count == 3:
             # Good case: 3 points visible
@@ -218,26 +218,26 @@ def process_frame(detected_tags, current_time, altitude):
             lateral_offset = tvec[0][0]
             relative_height = -tvec[1][0]
             true_distance = np.linalg.norm(tvec)
-            gate_measurements[gate_id] = GateMeasurement(lateral_offset, relative_height + altitude, true_distance, tag_count, current_time)
+            gate_measurements[gate_id] = GateMeasurement(lateral_offset, relative_height + altitude, true_distance, forward_velocity, tag_count, current_time)
 
         elif tag_count == 2:
             keys = list(tags.keys())
             if abs(keys[0] - keys[1]) == 2:
                 rel_h, z_dist, lat_off = process_two_tags_opposite(tags[keys[0]], tags[keys[1]])
-                gate_measurements[gate_id] = GateMeasurement(lat_off, rel_h + altitude, z_dist, tag_count, current_time)
+                gate_measurements[gate_id] = GateMeasurement(lat_off, rel_h + altitude, z_dist, tag_count, forward_velocity, current_time)
             else:
                 first_key = keys[0]
                 rel_h, z_dist, lat_off = process_single_tag(tags[first_key], first_key)
-                gate_measurements[gate_id] = GateMeasurement(lat_off, rel_h + altitude, z_dist, tag_count, current_time)
+                gate_measurements[gate_id] = GateMeasurement(lat_off, rel_h + altitude, z_dist, tag_count, forward_velocity, current_time)
 
         elif tag_count == 1:
             first_key = list(tags.keys())[0]
             rel_h, z_dist, lat_off = process_single_tag(tags[first_key], first_key)
-            gate_measurements[gate_id] = GateMeasurement(lat_off, rel_h + altitude, z_dist, tag_count, current_time)
+            gate_measurements[gate_id] = GateMeasurement(lat_off, rel_h + altitude, z_dist, tag_count, forward_velocity, current_time)
     return gate_measurements
 
 
-def detect_gates(image, current_time, altitude):
+def detect_gates(image, current_time, altitude, forward_velocity):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     corners, ids, rejected = DETECTOR.detectMarkers(gray)
 
@@ -245,7 +245,7 @@ def detect_gates(image, current_time, altitude):
         return None
 
     detected_tags = parse_aruco_returns(corners, ids)
-    gate_measurements = process_frame(detected_tags, current_time, altitude)
+    gate_measurements = process_frame(detected_tags, current_time, altitude, forward_velocity)
     return gate_measurements
 
 
@@ -257,26 +257,37 @@ class Gate:
     def __init__(self, init_time):
         self.lateral_offset_filter = fu.GatePositionKalmanFilter(0.05, 0.0, r_base=0.1, q_base=0.05)
         self.altitude_filter = fu.GatePositionKalmanFilter(0.05, 0.0, r_base=0.1, q_base=0.0005)
+        self.distance_filter = fu.DistanceSensorFusionFilter(0.05, 1.0, 0.0)
         self.prev_time = init_time
 
     def update(self, gate_measurement):
         dt = gate_measurement.current_time - self.prev_time
         self.prev_time = gate_measurement.current_time
         if gate_measurement.tag_count == 4:
-            self.lateral_offset_filter.update(gate_measurement.lateral_offset_measurement, gate_measurement.distance_measurement, 0.005, dt)
-            self.altitude_filter.update(gate_measurement.altitude_measurement, gate_measurement.distance_measurement, 0.005, dt)
+            self.lateral_offset_filter.update(gate_measurement.lateral_offset_measurement, gate_measurement.distance_measurement, 0.005)
+            self.altitude_filter.update(gate_measurement.altitude_measurement, gate_measurement.distance_measurement, 0.005)
+            self.distance_filter.update(gate_measurement.distance_measurement, gate_measurement.forward_velocity, 0.005)
 
         elif gate_measurement.tag_count == 3:
-            self.lateral_offset_filter.update(gate_measurement.lateral_offset_measurement, gate_measurement.distance_measurement, 0.03, dt)
-            self.altitude_filter.update(gate_measurement.altitude_measurement, gate_measurement.distance_measurement, 0.03, dt)
+            self.lateral_offset_filter.update(gate_measurement.lateral_offset_measurement, gate_measurement.distance_measurement, 0.03)
+            self.altitude_filter.update(gate_measurement.altitude_measurement, gate_measurement.distance_measurement, 0.03)
+            self.distance_filter.update(gate_measurement.distance_measurement, gate_measurement.forward_velocity, 0.03)
 
         elif gate_measurement.tag_count == 2:
-            self.lateral_offset_filter.update(gate_measurement.lateral_offset_measurement, gate_measurement.distance_measurement, 0.02, dt)
-            self.altitude_filter.update(gate_measurement.altitude_measurement, gate_measurement.distance_measurement, 0.02, dt)
+            self.lateral_offset_filter.update(gate_measurement.lateral_offset_measurement, gate_measurement.distance_measurement, 0.02)
+            self.altitude_filter.update(gate_measurement.altitude_measurement, gate_measurement.distance_measurement, 0.02)
+            self.distance_filter.update(gate_measurement.distance_measurement, gate_measurement.forward_velocity, 0.02)
 
         elif gate_measurement.tag_count == 1:
-            self.lateral_offset_filter.update(gate_measurement.lateral_offset_measurement, gate_measurement.distance_measurement, 0.08, dt)
-            self.altitude_filter.update(gate_measurement.altitude_measurement, gate_measurement.distance_measurement, 0.08, dt)
+            self.lateral_offset_filter.update(gate_measurement.lateral_offset_measurement, gate_measurement.distance_measurement, 0.08)
+            self.altitude_filter.update(gate_measurement.altitude_measurement, gate_measurement.distance_measurement, 0.08)
+            self.distance_filter.update(gate_measurement.distance_measurement, gate_measurement.forward_velocity, 0.08)
+
+    def update_forward_velocity(self, forward_velocity):
+        self.distance_filter.update_velocity_only(forward_velocity)
+
+    def reset_lateral_offset(self):
+        self.lateral_offset_filter.reset()
 
     def predict(self, current_time):
         dt = current_time - self.prev_time
@@ -288,10 +299,11 @@ class Gate:
         return f"height: {self.altitude_filter.x[0, 0]}, lateral offset: {self.lateral_offset_filter.x[0, 0]}"
 
 class GateMeasurement:
-    def __init__(self, lateral_offset_measurement, altitude_measurement, distance_measurement, tag_count, current_time):
+    def __init__(self, lateral_offset_measurement, altitude_measurement, distance_measurement, forward_velocity, tag_count, current_time):
         self.lateral_offset_measurement = lateral_offset_measurement
         self.altitude_measurement = altitude_measurement
         self.distance_measurement = distance_measurement
+        self.forward_velocity = forward_velocity
         self.tag_count = tag_count
         self.current_time = current_time
 

@@ -1,3 +1,4 @@
+import threading
 import time
 from typing import Union
 
@@ -181,11 +182,9 @@ class GatePositionKalmanFilter:
 
         return self.x[0, 0]  # Return predicted height
 
-    def update(self, measured_position, distance_to_gate, current_r_base, dt):
+    def update(self, measured_position, distance_to_gate, current_r_base):
         # Apply the specific r_base for the current vision mode
         R = np.array([[current_r_base * (distance_to_gate ** 2)]])
-        self.F = np.array([[1.0, dt],
-                           [0.0, 1.0]])
         # Dynamic R: Noise increases quadratically with distance
         R = np.array([[self.r_base * (distance_to_gate ** 2)]])
 
@@ -207,3 +206,88 @@ class GatePositionKalmanFilter:
         self.P = np.dot((I - np.dot(K, self.H)), self.P)
 
         return self.x[0, 0]  # Return updated height
+
+    def reset(self, initial_position=0.0):
+        """Resets the filter to a new initial position."""
+        self.x = np.array([[initial_position],
+                           [0.0]])
+        self.P = np.array([[500.0, 0.0],
+                           [0.0, 500.0]])
+
+
+import numpy as np
+
+
+class DistanceSensorFusionFilter:
+    def __init__(self, dt, initial_distance, initial_velocity=0.0):
+        self.lock = threading.Lock()
+
+        # State vector: [Distance, Velocity]
+        self.x = np.array([[initial_distance],
+                           [initial_velocity]])
+
+        self.F = np.array([[1.0, dt],
+                           [0.0, 1.0]])
+
+        # H is now an Identity matrix because we measure both state variables
+        self.H = np.array([[1.0, 0.0],
+                           [0.0, 1.0]])
+
+        self.P = np.array([[100.0, 0.0],
+                           [0.0, 100.0]])
+
+        # Q can be lower now because we aren't relying purely on the model for velocity
+        self.Q = np.array([[0.01, 0.0],
+                           [0.0, 0.05]])
+
+        # How much we trust the IMU (tune this based on your ARK sensor's specs)
+        self.r_imu = 0.05
+
+    def predict(self, dt):
+        with self.lock:
+            self.F = np.array([[1.0, dt],
+                               [0.0, 1.0]])
+            self.x = np.dot(self.F, self.x)
+            self.P = np.dot(np.dot(self.F, self.P), self.F.T) + self.Q
+            current_distance = self.x[0, 0]
+        return current_distance  # Return predicted distance
+
+    def update(self, camera_distance, imu_velocity, current_r_base):
+        camera_noise = current_r_base * (camera_distance ** 2)
+        R = np.array([[camera_noise, 0.0],
+                      [0.0, self.r_imu]])
+        # Measurement vector from our two different sensors
+        z = np.array([[camera_distance],
+                      [imu_velocity]])
+        with self.lock:
+            y = z - np.dot(self.H, self.x)
+            S = np.dot(np.dot(self.H, self.P), self.H.T) + R
+            K = np.dot(np.dot(self.P, self.H.T), np.linalg.inv(S))
+            self.x = self.x + np.dot(K, y)
+            I = np.eye(self.P.shape[0])
+            self.P = np.dot((I - np.dot(K, self.H)), self.P)
+            current_distance = self.x[0, 0]
+        return current_distance  # Return fused distance
+
+    def update_velocity_only(self, imu_velocity):
+        """
+        Runs a 1D update when only IMU data is available (No camera frame).
+        """
+        # H is 1x2: [0, 1] maps to [Distance, Velocity]
+        H_vel = np.array([[0.0, 1.0]])
+
+        # R is 1x1: Just the IMU noise
+        R_vel = np.array([[self.r_imu]])
+
+        # z is 1x1: The measurement
+        z = np.array([[imu_velocity]])
+        with self.lock:
+            y = z - np.dot(H_vel, self.x)
+            S = np.dot(np.dot(H_vel, self.P), H_vel.T) + R_vel
+            K = np.dot(np.dot(self.P, H_vel.T), np.linalg.inv(S))
+            self.x = self.x + np.dot(K, y)
+            I = np.eye(self.P.shape[0])
+            self.P = np.dot((I - np.dot(K, H_vel)), self.P)
+            current_distance = self.x[0, 0]
+
+        return current_distance  # Return the newly corrected distance

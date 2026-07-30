@@ -10,12 +10,12 @@ Fit y = m*x + b to the colored line pixels with linear regression.
 #    You don't need to read or change this block. --
 import os as _os
 import sys as _sys
+import threading
 
 import cv2.aruco
 import numpy as np
 
 import drone_utils
-from physics import Physics
 
 _d = _os.path.dirname(_os.path.realpath(__file__))
 while _os.path.basename(_d) != "labs" and _os.path.dirname(_d) != _d:
@@ -48,10 +48,6 @@ obj_points = np.array([
 # -- Module-level state -----------------------------------------------------
 _timer = 0.0
 _done = False
-_lap = 0
-_return_timer = 0.0
-_prev_roll_err = 0.0
-_prev_bottom_mean = None
 
 full_controller = PDControl.FullController(kp_yaw=0.05, kp_alt=1, max_yaw=1, max_throttle=0.8)
 roll_controller = PDControl.PDController(6.0, 0.0, 0.5)
@@ -59,6 +55,8 @@ direction_filter = fu.VectorExponentialLowPassFilter(0.8)
 mean_filter = fu.VectorExponentialLowPassFilter(0.8)
 
 mode = "None"
+_command_lock = threading.Lock()
+_active_flight_mode = "LINE_FOLLOW"
 
 _line_follow_thread = None
 _line_follow_running = False
@@ -83,8 +81,12 @@ def reset():
 
 
 def line_control_loop(drone):
-    global _timer, _done, _lap, ADVANCE_PITCH, _prev_roll_err, _return_timer, mode, _prev_bottom_mean, _target_height
+    global _timer, _done, ADVANCE_PITCH, mode, _target_height
     global _line_follow_running, _latest_cmd
+
+    _return_timer = 0.0
+    _prev_roll_err = 0.0
+    _prev_bottom_mean = None
 
     # Target 20 frames per second (0.05 seconds per loop)
     target_fps = 20.0
@@ -166,7 +168,7 @@ def line_control_loop(drone):
                                                _yaw=target_angle, dt=dt)
             print(f"roll: {roll}, yaw: {output[2]}")
             # UPDATE THREAD STATE INSTEAD OF SENDING
-            _latest_cmd = {"pitch": ADVANCE_PITCH, "roll": roll, "yaw": output[2], "throttle": output[3]}
+            set_flight_command("LINE_FOLLOW", ADVANCE_PITCH, roll, output[2], output[3])
             _prev_roll_err = roll_err
 
         # Small sleep to prevent this loop from maxing out a CPU core
@@ -199,7 +201,7 @@ def gate_fly_through_loop(drone):
 
 
         # UPDATE THREAD STATE INSTEAD OF SENDING
-        _latest_cmd = {"pitch": 0.5, "roll": 0.0, "yaw": 0.0, "throttle": 0.0}
+        set_flight_command("GATE_FLY_THROUGH", 0.5, 0.0, 0.0, 0.0)
 
         # Small sleep to prevent this loop from maxing out a CPU core
         # --- THE RATE LIMITER ---
@@ -233,12 +235,12 @@ def gate_detect_loop(drone):
 
         if _image is not None:
             image = cv2.resize(_image, (640, 480), interpolation=cv2.INTER_LINEAR)
-            gate_measurements = gd.detect_gates(image, _timer, drone.physics.get_altitude())
-            for (key, value) in gate_measurements.items():
-                if value is not None:
-                    _gates[key].update(value)
+            gate_measurements = gd.detect_gates(image, _timer, drone.physics.get_altitude(), drone.physics.get_linear_velocity()[2])
+            for (gate_id, gate_measurement) in gate_measurements.items():
+                if gate_measurement is not None:
+                    _gates[gate_id].update(gate_measurement)
                 else:
-                    _gates[key].predict()
+                    _gates[gate_id].predict()
 
 
         # Small sleep to prevent this loop from maxing out a CPU core
@@ -252,8 +254,17 @@ def gate_detect_loop(drone):
             time.sleep(time_to_sleep)
 
 
+def update_gate_distances(drone):
+    for (gate_id, gate) in _gates.items():
+        if gate is not None:
+            gate.update_forward_velocity(drone.physics.get_linear_velocity()[2])
+
+
 def update(drone):
     global _timer, _done, _line_follow_thread, _line_follow_running, _latest_cmd, _gate_detect_running, _gate_detect_thread, _gate_fly_through_thread, _gate_fly_through, _gate_fly_through_running
+    global _active_flight_mode
+
+    update_gate_distances(drone)
 
     if _done:
         _line_follow_running = False  # Tell the thread loop to shut down safely
@@ -273,6 +284,11 @@ def update(drone):
         _gate_detect_thread.start()
 
     if _gate_fly_through.value:
+        # 1. Instantly switch authority so the line follower is locked out
+        with _command_lock:
+            _active_flight_mode = "GATE_FLY_THROUGH"
+
+        # 2. Tell the threads to pause/resume in the background
         _line_follow_thread.pause()
         if _gate_fly_through_thread is None:
             _gate_fly_through_running = True
@@ -280,7 +296,13 @@ def update(drone):
             _gate_fly_through_thread.start()
         else:
             _gate_fly_through_thread.resume()
+
     else:
+        # 1. Instantly switch authority back to the line follower
+        with _command_lock:
+            _active_flight_mode = "LINE_FOLLOW"
+
+        # 2. Tell the threads to pause/resume in the background
         _line_follow_thread.resume()
         if _gate_fly_through_thread is not None:
             _gate_fly_through_thread.pause()
@@ -288,12 +310,26 @@ def update(drone):
 
     _timer += drone.get_delta_time()
 
+    current_cmd = _latest_cmd
+
     # Fast-publish the most recent command calculated by the vision thread
     drone.flight.send_pcmd(
-        _latest_cmd["pitch"],
-        _latest_cmd["roll"],
-        _latest_cmd["yaw"],
-        _latest_cmd["throttle"]
+        current_cmd["pitch"],
+        current_cmd["roll"],
+        current_cmd["yaw"],
+        current_cmd["throttle"]
     )
 
     return _done
+
+
+def set_flight_command(caller_mode, pitch, roll, yaw, throttle):
+    global _latest_cmd
+
+    with _command_lock:
+        # Only accept commands from the thread that is officially driving
+        if caller_mode == _active_flight_mode:
+            _latest_cmd["pitch"] = pitch
+            _latest_cmd["roll"] = roll
+            _latest_cmd["yaw"] = yaw
+            _latest_cmd["throttle"] = throttle
