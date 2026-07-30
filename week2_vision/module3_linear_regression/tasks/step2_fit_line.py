@@ -91,7 +91,7 @@ def line_control_loop(drone):
                     continue
                 else:
                     if len(points) > MIN_PIXELS and _return_timer > 2:
-                        directions, means = lu.fit_lines(points)
+                        direction, means = lu.fit_lines(points)
                         roll_err = means[0][0] - COL_CENTER
                         _prev_roll_err = roll_err
                     else:
@@ -104,19 +104,15 @@ def line_control_loop(drone):
                     set_flight_command("LINE_FOLLOW", 0, roll, 0, 0)
                     continue
 
-            directions, means = lu.fit_lines(points, prev_bottom_mean=_prev_bottom_mean)
-            # directions = direction_filter(_directions)
-            # means = mean_filter(_means)
-            _prev_bottom_mean = means[3]
+            _direction, _mean = lu.fit_line(points)
+            direction = direction_filter(_direction)
+            mean = mean_filter(_mean)
+            angle = np.arctan(direction[0], direction[1])
+            angle = np.degrees(angle)
+            roll_err = mean[0] - COL_CENTER
+            target_angle = angle
 
-            angles = np.arctan(directions[:, 0], directions[:, 1])
-            angles = np.degrees(angles)
-            curvature = 0 #angles[0] - angles[3]
-            roll_err = means[3][0] - COL_CENTER
-            target_angle = angles[1]
-
-            if abs(curvature) < 30 and abs(roll_err) < 160:
-                curvature = 0
+            if abs(roll_err) < 160:
                 ADVANCE_PITCH = 0.125
                 roll_controller.kp = 1.0
                 roll_controller.max_output = 1
@@ -124,26 +120,22 @@ def line_control_loop(drone):
             else:
                 ADVANCE_PITCH = 0.125
                 roll_controller.kp = 1.0
-                if abs(roll_err) > 160:
-                    ADVANCE_PITCH = 0.125
-                    curvature = 0.0
-                    roll_controller.kp = 1
-                    mode = "Roll Correct"
-                else:
-                    mode = "Curve"
+                ADVANCE_PITCH = 0.125
+                curvature = 0.0
+                roll_controller.kp = 1
+                mode = "Roll Correct"
                 roll_controller.max_output = 1
 
-            curvature_ff = -curvature * 0.008
             full_controller.set_setpoint(_alt=1)
             normalized_roll_err = roll_err / COL_CENTER
-            print(f"roll err: {normalized_roll_err}, target angle: {target_angle}")
-            # target_angle -= normalized_roll_err * 30
-            roll = -roll_controller.calculate_position(normalized_roll_err, dt) + curvature_ff
+            # print(f"roll err: {normalized_roll_err}, target angle: {target_angle}")
+            target_angle -= normalized_roll_err * 15
+            roll = -roll_controller.calculate_position(normalized_roll_err, dt)
             roll = drone_utils.clamp(roll, -1, 1)
             output = full_controller.calculate(_alt=drone.physics.get_altitude(),
                                                _alt_vel=drone.physics.get_linear_velocity()[1],
                                                _yaw=target_angle, dt=dt)
-            # print(f"roll: {roll}, yaw: {output[2]}")
+            print(f"roll: {roll}, yaw: {output[2]}")
             # UPDATE THREAD STATE INSTEAD OF SENDING
             set_flight_command("LINE_FOLLOW", ADVANCE_PITCH, roll, output[2], output[3])
             _prev_roll_err = roll_err
