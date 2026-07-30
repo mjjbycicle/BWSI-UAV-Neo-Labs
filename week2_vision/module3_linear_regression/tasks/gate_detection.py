@@ -133,6 +133,41 @@ def process_two_tags_opposite(tag_a, tag_b):
     x_relative = (u_center - cx) * z_distance / fx
     y_relative = (v_center - cy) * z_distance / fy
 
+    corner_idx_product = (ID_TO_CORNER_IDX[tag_a.tag_id] + 1) * (ID_TO_CORNER_IDX[tag_b.tag_id] + 1)
+    if corner_idx_product == 2:
+        x_relative -= REAL_GATE_RADIUS / 2
+        y_relative += REAL_GATE_RADIUS / 2
+    elif corner_idx_product == 6:
+        x_relative -= REAL_GATE_RADIUS / 2
+        y_relative -= REAL_GATE_RADIUS / 2
+    elif corner_idx_product == 12:
+        x_relative += REAL_GATE_RADIUS / 2
+        y_relative -= REAL_GATE_RADIUS / 2
+    else:
+        x_relative += REAL_GATE_RADIUS / 2
+        y_relative += REAL_GATE_RADIUS / 2
+
+    relative_height = - y_relative
+
+    return relative_height, z_distance, x_relative
+
+
+def process_two_tags_diagonal(tag_a, tag_b):
+    fx, fy = camera_matrix[0,0], camera_matrix[1,1]
+    cx, cy = camera_matrix[0,2], camera_matrix[1,2]
+
+    # 1. Pixel center of the gate (midpoint formula)
+    u_center = (tag_a.center_pixel[0] + tag_b.center_pixel[0]) / 2.0
+    v_center = (tag_a.center_pixel[1] + tag_b.center_pixel[1]) / 2.0
+
+    # 2. Distance (Z) using wide baseline (1.5m)
+    pixel_dist = np.linalg.norm(np.array(tag_a.center_pixel) - np.array(tag_b.center_pixel))
+    z_distance = (fx * REAL_GATE_DIAGONAL) / pixel_dist  # Assuming fx and fy are similar
+
+    # 3. Un-project to find physical X and Y relative to camera
+    x_relative = (u_center - cx) * z_distance / fx
+    y_relative = (v_center - cy) * z_distance / fy
+
     # OpenCV Y is DOWN. Invert it so positive is UP.
     relative_height = -y_relative
 
@@ -228,8 +263,7 @@ def process_frame(detected_tags, current_time, altitude, forward_velocity):
                 rel_h, z_dist, lat_off = process_two_tags_opposite(tags[keys[0]], tags[keys[1]])
                 gate_measurements[gate_id] = GateMeasurement(lat_off, rel_h + altitude, z_dist, tag_count, forward_velocity, current_time)
             else:
-                first_key = keys[0]
-                rel_h, z_dist, lat_off = process_single_tag(tags[first_key], first_key)
+                rel_h, z_dist, lat_off = process_two_tags_diagonal(tags[keys[0]], tags[keys[1]])
                 gate_measurements[gate_id] = GateMeasurement(lat_off, rel_h + altitude, z_dist, tag_count, forward_velocity, current_time)
 
         elif tag_count == 1:
