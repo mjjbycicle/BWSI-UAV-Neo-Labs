@@ -14,8 +14,8 @@ FOCAL_PX = 615.3  # Camera focal length in pixels (approx calibration)
 REAL_TAG_SIZE = 0.19  # Physical corner-tag side length, meters (approx)
 IMAGE_HEIGHT = 480
 IMAGE_WIDTH = 640
-REAL_GATE_DIAMETER = 2.0
-REAL_GATE_RADIUS = 1.0
+REAL_GATE_DIAMETER = 1.8
+REAL_GATE_RADIUS = REAL_GATE_DIAMETER / 2
 
 HORIZONTAL_TAGS = [4, 8]
 VERTICAL_TAGS = [3, 7]
