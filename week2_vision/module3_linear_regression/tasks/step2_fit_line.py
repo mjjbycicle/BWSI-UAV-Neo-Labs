@@ -109,23 +109,23 @@ def line_control_loop(drone):
             # means = mean_filter(_means)
             _prev_bottom_mean = means[3]
 
-            angles = np.arctan2(directions[:, 0], directions[:, 1])
+            angles = np.arctan(directions[:, 0], directions[:, 1])
             angles = np.degrees(angles)
             curvature = 0 #angles[0] - angles[3]
             roll_err = means[3][0] - COL_CENTER
-            target_angle = angles[0]
+            target_angle = angles[1]
 
             if abs(curvature) < 30 and abs(roll_err) < 160:
                 curvature = 0
-                ADVANCE_PITCH = 0.1
-                roll_controller.kp = 1.5
+                ADVANCE_PITCH = 0.125
+                roll_controller.kp = 1.0
                 roll_controller.max_output = 1
                 mode = "Straight"
             else:
-                ADVANCE_PITCH = 0.1
-                roll_controller.kp = 1.5
+                ADVANCE_PITCH = 0.125
+                roll_controller.kp = 1.0
                 if abs(roll_err) > 160:
-                    ADVANCE_PITCH = 0.1
+                    ADVANCE_PITCH = 0.125
                     curvature = 0.0
                     roll_controller.kp = 1
                     mode = "Roll Correct"
@@ -134,9 +134,9 @@ def line_control_loop(drone):
                 roll_controller.max_output = 1
 
             curvature_ff = -curvature * 0.008
-            full_controller.set_setpoint(_alt=1.5)
+            full_controller.set_setpoint(_alt=1)
             normalized_roll_err = roll_err / COL_CENTER
-            print(f"roll err: {normalized_roll_err}")
+            print(f"roll err: {normalized_roll_err}, target angle: {target_angle}")
             # target_angle -= normalized_roll_err * 30
             roll = -roll_controller.calculate_position(normalized_roll_err, dt) + curvature_ff
             roll = drone_utils.clamp(roll, -1, 1)
