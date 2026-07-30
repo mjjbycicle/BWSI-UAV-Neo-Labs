@@ -322,25 +322,3 @@ def parse_aruco_returns(corners, ids):
         detected_tags.append(Tag(tag_id, center_pixel, pixel_width))
 
     return detected_tags
-
-
-def main():
-    print("Started...")
-    image = cv2.imread(TEST_PATH)
-    if image is not None:
-        gate = detect_gates(image)
-
-        if gate is None:
-            print("No gate detected")
-        else:
-            print("Gate properties:")
-            print(f"Num of gates: {gate.count}")
-            print(f"Ids: {gate.ids}")
-            print(f"Center: {gate.cx}, {gate.cy}")
-            print(f"Distance: {gate.distance}m")
-    else:
-        print("Image not found")
-
-
-if __name__ == "__main__":
-    main()
