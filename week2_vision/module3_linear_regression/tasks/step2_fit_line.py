@@ -19,22 +19,15 @@ ADVANCE_PITCH = 0.1  # fly forward off the spawn pad to reach the line
 ADVANCE_TIME = 8.0  # seconds of forward flight before fitting
 K_CURVE = 0.1
 COL_CENTER = 320
-MARKER_LENGTH = 38 * 7 / 1000
-obj_points = np.array([
-    [-MARKER_LENGTH / 2, MARKER_LENGTH / 2, 0],
-    [MARKER_LENGTH / 2, MARKER_LENGTH / 2, 0],
-    [MARKER_LENGTH / 2, -MARKER_LENGTH / 2, 0],
-    [-MARKER_LENGTH / 2, -MARKER_LENGTH / 2, 0]
-], dtype=np.float32)
 
 # -- Module-level state -----------------------------------------------------
 _timer = 0.0
 _done = False
 
-full_controller = PDControl.FullController(kp_yaw=0.05, kp_alt=1, max_yaw=1, max_throttle=0.8)
-roll_controller = PDControl.PDController(6.0, 0.0, 0.5)
-direction_filter = fu.VectorExponentialLowPassFilter(0.95)
-mean_filter = fu.VectorExponentialLowPassFilter(0.95)
+full_controller = PDControl.FullController(kp_yaw=0.08, kp_alt=1, max_yaw=0.7, max_throttle=0.8)
+roll_controller = PDControl.PDController(1.0, 0.0, 0.4)
+direction_filter = fu.VectorExponentialLowPassFilter(0.99)
+mean_filter = fu.VectorExponentialLowPassFilter(0.99)
 
 mode = "None"
 _command_lock = threading.Lock()
@@ -105,44 +98,46 @@ def line_control_loop(drone):
                         roll_err = _prev_roll_err
 
                     normalized_roll_err = roll_err / COL_CENTER
-                    roll = roll_controller.calculate_position(normalized_roll_err, dt)
+                    roll = -roll_controller.calculate_position(normalized_roll_err, dt)
 
                     # UPDATE THREAD STATE INSTEAD OF SENDING
                     set_flight_command("LINE_FOLLOW", 0, roll, 0, 0)
                     continue
 
-            _directions, _means = lu.fit_lines(points, prev_bottom_mean=_prev_bottom_mean)
-            directions = direction_filter(_directions)
-            means = mean_filter(_means)
+            directions, means = lu.fit_lines(points, prev_bottom_mean=_prev_bottom_mean)
+            # directions = direction_filter(_directions)
+            # means = mean_filter(_means)
             _prev_bottom_mean = means[3]
 
             angles = np.arctan2(directions[:, 0], directions[:, 1])
             angles = np.degrees(angles)
-            curvature = angles[0] - angles[3]
-            roll_err = means[0][0] - COL_CENTER
+            curvature = 0 #angles[0] - angles[3]
+            roll_err = means[3][0] - COL_CENTER
             target_angle = angles[0]
-            # print(f"target angle: {target_angle}")
 
             if abs(curvature) < 30 and abs(roll_err) < 160:
                 curvature = 0
-                ADVANCE_PITCH = 0.4
+                ADVANCE_PITCH = 0.1
                 roll_controller.kp = 1.5
                 roll_controller.max_output = 1
                 mode = "Straight"
             else:
-                ADVANCE_PITCH = 0.4
+                ADVANCE_PITCH = 0.1
                 roll_controller.kp = 1.5
                 if abs(roll_err) > 160:
-                    ADVANCE_PITCH = 0.4
+                    ADVANCE_PITCH = 0.1
                     curvature = 0.0
                     roll_controller.kp = 1
                     mode = "Roll Correct"
+                else:
+                    mode = "Curve"
                 roll_controller.max_output = 1
-                mode = "Curve"
 
             curvature_ff = -curvature * 0.008
-            full_controller.set_setpoint(_alt=_target_height)
+            full_controller.set_setpoint(_alt=1.5)
             normalized_roll_err = roll_err / COL_CENTER
+            print(f"roll err: {normalized_roll_err}")
+            # target_angle -= normalized_roll_err * 30
             roll = -roll_controller.calculate_position(normalized_roll_err, dt) + curvature_ff
             roll = drone_utils.clamp(roll, -1, 1)
             output = full_controller.calculate(_alt=drone.physics.get_altitude(),
@@ -202,7 +197,7 @@ def gate_detect_loop(drone):
 
     last_time = time.time()
 
-    while _line_follow_running:
+    while _gate_detect_running:
         loop_start_time = time.time()
 
         # Calculate isolated delta time for the vision controllers

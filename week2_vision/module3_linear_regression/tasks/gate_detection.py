@@ -19,14 +19,14 @@ REAL_GATE_DIAMETER = 1.8
 REAL_GATE_RADIUS = REAL_GATE_DIAMETER / 2
 REAL_GATE_DIAGONAL = ((REAL_GATE_RADIUS ** 2) * 2) ** 0.5
 
-HORIZONTAL_TAGS = [4, 8] #left, right ...
-VERTICAL_TAGS = [7, 3] #top, bottom ...
+HORIZONTAL_TAGS = [73, 74] #left, right ...
+VERTICAL_TAGS = [72, 75] #top, bottom ...
 TOP_TAGS = VERTICAL_TAGS[::2]
 BOTTOM_TAGS = VERTICAL_TAGS[1::2]
 LEFT_TAGS = HORIZONTAL_TAGS[::2]
 RIGHT_TAGS = HORIZONTAL_TAGS[1::2]
 CORNER_IDX = [TOP_TAGS, RIGHT_TAGS, BOTTOM_TAGS, LEFT_TAGS]
-GATES = [[3, 4, 7, 8]]
+GATES = [[72, 73, 74, 75]]
 NUM_GATES = len(GATES)
 
 
@@ -260,7 +260,7 @@ def process_frame(detected_tags, current_time, altitude, forward_velocity):
                 tag_a = tags[opposite_pair[0]]
                 tag_b = tags[opposite_pair[1]]
 
-                abs_h, z_dist, lat_off = process_two_tags_opposite(tag_a, tag_b)
+                rel_h, z_dist, lat_off = process_two_tags_opposite(tag_a, tag_b)
                 gate_measurements[gate_id] = GateMeasurement(lat_off, rel_h + altitude, z_dist, forward_velocity, tag_count, current_time)
             else:
                 first_key = keys[0]
