@@ -28,7 +28,6 @@ from . import line_util as lu
 from . import filter_util as fu
 from . import gate_detection as gd
 from . import threading_util as tu
-import threading
 import time
 
 # -- Constants --------------------------------------------------------------
@@ -72,6 +71,9 @@ _gate_fly_through_thread = None
 _gate_fly_through_running = False
 _gate_fly_through = fu.BooleanDebouncer(delay_seconds=0.1)
 _gate_fly_through_timer = 0.0
+_gates = dict()
+for i in range(len(gd.NUM_GATES)):
+    _gates[i] = gd.Gate(0.0)
 
 
 def reset():
@@ -231,11 +233,13 @@ def gate_detect_loop(drone):
 
         if _image is not None:
             image = cv2.resize(_image, (640, 480), interpolation=cv2.INTER_LINEAR)
-            gate = gd.detect_gates(image)
-            _closest_gate = gate
-            if _closest_gate is not None:
-                _target_height = drone.physics.get_altitude() + gd.gate_height(_closest_gate)
-            print(gate)
+            gate_measurements = gd.detect_gates(image, _timer, drone.physics.get_altitude())
+            for (key, value) in gate_measurements.items():
+                if value is not None:
+                    _gates[key].update(value)
+                else:
+                    _gates[key].predict()
+
 
         # Small sleep to prevent this loop from maxing out a CPU core
         # --- THE RATE LIMITER ---

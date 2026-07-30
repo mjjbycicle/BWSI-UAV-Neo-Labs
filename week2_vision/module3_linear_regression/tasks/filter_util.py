@@ -139,16 +139,16 @@ class BooleanDebouncer:
         return self._stable_value
 
 
-class GateHeightKalmanFilter:
-    def __init__(self, dt, initial_height, r_base=0.1):
+class GatePositionKalmanFilter:
+    def __init__(self, dt, initial_position, r_base=0.1, q_base=0.01):
         """
         Initializes the Linear Kalman Filter for gate height tracking.
         dt: Time step between predictions (seconds)
-        initial_height: First rough guess of the gate height
+        initial_position: First rough guess of the gate position
         r_base: Baseline measurement noise multiplier
         """
         # State vector: x = [height, velocity]^T
-        self.x = np.array([[initial_height],
+        self.x = np.array([[initial_position],
                            [0.0]])
 
         # State transition matrix (F) - Constant Velocity Model
@@ -163,14 +163,16 @@ class GateHeightKalmanFilter:
                            [0.0, 500.0]])
 
         # Process Noise Covariance (Q) - Adjust based on expected drone drift
-        self.Q = np.array([[0.1, 0.0],
-                           [0.0, 0.1]])
+        self.Q = np.array([[q_base, 0.0],
+                           [0.0, q_base]])
 
         # Base multiplier for measurement noise
         self.r_base = r_base
 
-    def predict(self):
+    def predict(self, dt):
         """Predicts the next state. Call this every flight controller loop."""
+        self.F = np.array([[1.0, dt],
+                           [0.0, 1.0]])
         # x = F * x
         self.x = np.dot(self.F, self.x)
 
@@ -179,13 +181,16 @@ class GateHeightKalmanFilter:
 
         return self.x[0, 0]  # Return predicted height
 
-    def update(self, measured_height, distance_to_gate):
-        """Updates the state with a new camera measurement."""
+    def update(self, measured_position, distance_to_gate, current_r_base, dt):
+        # Apply the specific r_base for the current vision mode
+        R = np.array([[current_r_base * (distance_to_gate ** 2)]])
+        self.F = np.array([[1.0, dt],
+                           [0.0, 1.0]])
         # Dynamic R: Noise increases quadratically with distance
         R = np.array([[self.r_base * (distance_to_gate ** 2)]])
 
         # Measurement residual: y = z - H * x
-        z = np.array([[measured_height]])
+        z = np.array([[measured_position]])
         y = z - np.dot(self.H, self.x)
 
         # Innovation covariance: S = H * P * H^T + R
