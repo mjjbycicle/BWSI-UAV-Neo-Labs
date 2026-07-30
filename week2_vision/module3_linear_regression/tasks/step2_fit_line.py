@@ -38,11 +38,14 @@ _line_follow_running = False
 _latest_cmd = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "throttle": 0.0}
 _gate_detect_thread = None
 _gate_detect_running = False
+_closest_gate_distance = 0.0
 _closest_gate = None
-_target_height = 0.5
+_target_height = 1.0
 _gates = dict()
 for i in range(gd.NUM_GATES):
     _gates[i] = gd.Gate(0.0)
+
+
 
 
 def reset():
@@ -120,7 +123,7 @@ def line_control_loop(drone):
                 mode = "Roll Correct"
                 roll_controller.max_output = 1
 
-            full_controller.set_setpoint(_alt=1)
+            full_controller.set_setpoint(_alt=_target_height)
             normalized_roll_err = roll_err / COL_CENTER
             # print(f"roll err: {normalized_roll_err}, target angle: {target_angle}")
             target_angle -= normalized_roll_err * 15
