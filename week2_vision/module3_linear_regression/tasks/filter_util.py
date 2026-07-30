@@ -100,7 +100,7 @@ class VectorExponentialLowPassFilter:
         self.alpha = alpha
         self.last_estimate = None
 
-    def __call__(self, current_value: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+    def __call__(self, current_value: np.ndarray) -> np.ndarray:
         # Convert inputs to numpy arrays if they are lists for safety
         if isinstance(current_value, list):
             current_value = np.array(current_value)

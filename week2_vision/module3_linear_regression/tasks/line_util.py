@@ -28,6 +28,6 @@ def fit_line(x, y):
     cov_matrix = np.array([[sxx, sxy],
                            [sxy, syy]])
     eigenvalues, eigenvectors = np.linalg.eigh(cov_matrix)
-    direction = eigenvectors[:, -1]
+    direction = np.array(eigenvectors[:, -1])
 
     return direction, centroid
