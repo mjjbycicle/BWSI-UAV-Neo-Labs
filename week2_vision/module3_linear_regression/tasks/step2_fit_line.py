@@ -39,12 +39,12 @@ _line_follow_running = False
 _latest_cmd = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "throttle": 0.0}
 _gate_detect_thread = None
 _gate_detect_running = False
-_closest_gate = None
+_prev_closest_gate = None
 _target_height = 0.5
 _accepting_new_height = True
 _gates = dict()
 for i in range(gd.NUM_GATES):
-    _gates[i] = gd.Gate(0.0)
+    _gates[i] = gd.Gate(0.0, i)
 
 
 def reset():
@@ -148,7 +148,7 @@ def line_control_loop(drone):
 
 
 def gate_detect_loop(drone):
-    global _timer, _done, mode, _closest_gate, _target_height
+    global _timer, _done, mode, _prev_closest_gate, _target_height
     global _line_follow_running, _latest_cmd
 
     # Target 20 frames per second (0.05 seconds per loop)
@@ -178,6 +178,10 @@ def gate_detect_loop(drone):
                         closest_val = _gates[gate_id].distance_filter.x[0, 0]
                         closest_gate = _gates[gate_id]
 
+
+                _accepting_new_height = closest_gate.id == _prev_closest_gate.id
+
+                
                 if closest_val <= CLOSEST_GATE_THRESHOLD and _accepting_new_height:
                     _target_height = closest_gate.altitude_filter.x[0, 0]
 

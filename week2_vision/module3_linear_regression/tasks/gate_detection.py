@@ -291,11 +291,12 @@ class Gate:
     (gate size proxy), mean tag pixel size (a proximity signal that works with one tag),
     and the decoded corner-tag ids."""
 
-    def __init__(self, init_time):
+    def __init__(self, init_time, id):
         self.lateral_offset_filter = fu.GatePositionKalmanFilter(0.05, 0.0, r_base=0.1, q_base=0.05)
         self.altitude_filter = fu.GatePositionKalmanFilter(0.05, 0.0, r_base=0.1, q_base=0.0005)
         self.distance_filter = fu.DistanceSensorFusionFilter(0.05, 1.0, 0.0)
         self.prev_time = init_time
+        self.id = id
 
     def update(self, gate_measurement):
         dt = gate_measurement.current_time - self.prev_time
