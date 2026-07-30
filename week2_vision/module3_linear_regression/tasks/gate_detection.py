@@ -93,7 +93,7 @@ def debug(corners, ids, rejected, image, center):
         draw_center_point(image, center)
         cv2.imwrite(OUTPUT_PATH, image)
 
-
+"""
 # Calculates the distance each marker is from the camera in meters
 def marker_distance(corners):
     distances = []
@@ -109,7 +109,8 @@ def marker_distance(corners):
         distances.append(FOCAL_PX * REAL_TAG_SIZE / np.mean(side_lengths))
 
     return np.mean(distances)
-
+"""
+# This function is never used but its pretty self explanatory
 def calculate_pixel_distance(tag_a, tag_b):
     """Helper for the 2-tag wide baseline math."""
     pt1 = np.array(tag_a.center_pixel)
@@ -125,7 +126,7 @@ def process_two_tags_opposite(tag_a, tag_b):
     u_center = (tag_a.center_pixel[0] + tag_b.center_pixel[0]) / 2.0
     v_center = (tag_a.center_pixel[1] + tag_b.center_pixel[1]) / 2.0
 
-    # 2. Distance (Z) using wide baseline (1.5m)
+    # 2. Distance (Z) using wide baseline (REAL_GATE_DIAMETER)
     pixel_dist = np.linalg.norm(np.array(tag_a.center_pixel) - np.array(tag_b.center_pixel))
     z_distance = (fx * REAL_GATE_DIAMETER) / pixel_dist  # Assuming fx and fy are similar
 
@@ -178,7 +179,7 @@ def process_single_tag(tag, corner_idx):
     fx, fy = camera_matrix[0,0], camera_matrix[1,1]
     cx, cy = camera_matrix[0,2], camera_matrix[1,2]
 
-    # 1. Distance (Z) using single tag width (0.1m)
+    # 1. Distance (Z) using single tag width (REAL_TAG_SIZE)
     z_distance = (fx * REAL_TAG_SIZE) / tag.pixel_width
 
     # 2. Un-project the tag's center pixel to find the tag's physical location
@@ -195,13 +196,13 @@ def process_single_tag(tag, corner_idx):
     gate_relative_height = tag_relative_height
     gate_lateral_offset = tag_lateral_offset
 
-    if corner_idx == 0:   # Top Tag: Gate is 0.75m below it
+    if corner_idx == 0:   # Top Tag: Gate is REAL_GATE_RADIUSm below it
         gate_relative_height -= REAL_GATE_RADIUS
-    elif corner_idx == 2: # Bottom Tag: Gate is 0.75m above it
+    elif corner_idx == 2: # Bottom Tag: Gate is REAL_GATE_RADIUSm above it
         gate_relative_height += REAL_GATE_RADIUS
-    elif corner_idx == 1: # Right Tag: Gate is 0.75m to the left
+    elif corner_idx == 1: # Right Tag: Gate is REAL_GATE_RADIUSm to the left
         gate_lateral_offset -= REAL_GATE_RADIUS
-    elif corner_idx == 3: # Left Tag: Gate is 0.75m to the right
+    elif corner_idx == 3: # Left Tag: Gate is REAL_GATE_RADIUSm to the right
         gate_lateral_offset += REAL_GATE_RADIUS
 
     return gate_relative_height, z_distance, gate_lateral_offset
@@ -261,15 +262,16 @@ def process_frame(detected_tags, current_time, altitude, forward_velocity):
             keys = list(tags.keys())
             if abs(keys[0] - keys[1]) == 2:
                 rel_h, z_dist, lat_off = process_two_tags_opposite(tags[keys[0]], tags[keys[1]])
-                gate_measurements[gate_id] = GateMeasurement(lat_off, rel_h + altitude, z_dist, tag_count, forward_velocity, current_time)
+                gate_measurements[gate_id] = GateMeasurement(lat_off, rel_h + altitude, z_dist, forward_velocity, tag_count, current_time)
             else:
+                first_key = keys[0]
                 rel_h, z_dist, lat_off = process_two_tags_diagonal(tags[keys[0]], tags[keys[1]])
-                gate_measurements[gate_id] = GateMeasurement(lat_off, rel_h + altitude, z_dist, tag_count, forward_velocity, current_time)
+                gate_measurements[gate_id] = GateMeasurement(lat_off, rel_h + altitude, z_dist, forward_velocity, tag_count, current_time)
 
         elif tag_count == 1:
             first_key = list(tags.keys())[0]
             rel_h, z_dist, lat_off = process_single_tag(tags[first_key], first_key)
-            gate_measurements[gate_id] = GateMeasurement(lat_off, rel_h + altitude, z_dist, tag_count, forward_velocity, current_time)
+            gate_measurements[gate_id] = GateMeasurement(lat_off, rel_h + altitude, z_dist, forward_velocity, tag_count, current_time)
     return gate_measurements
 
 
