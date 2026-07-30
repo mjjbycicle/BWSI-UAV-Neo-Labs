@@ -7,6 +7,9 @@ import numpy as np
 import cv2
 import neo_lab
 
+IMAGE_HEIGHT = 480
+MIN_PX = 200
+
 def downsample_points_grid(points, target_points=1500):
     x_range, y_range = np.ptp(points, axis=0)
     grid_size = np.sqrt((x_range * y_range) / target_points)
@@ -31,3 +34,13 @@ def fit_line(x, y):
     direction = np.array(eigenvectors[:, -1])
 
     return direction, centroid
+
+def fit_lines(image):
+    mask = neo_lab.bright_mask(image, 210)
+    mid_third = mask[IMAGE_HEIGHT / 3: IMAGE_HEIGHT * 2 / 3]
+    mid_points = np.argwhere(mid_third==255)
+    points = np.argwhere(mask==255)
+    if len(mid_points) < 200: mid_points = points
+    direction, _mean = fit_line(points[:, 1], points[:, 0])
+    _direction, mean = fit_line(mid_points[:, 1], mid_points[:, 0])
+    return direction, mean

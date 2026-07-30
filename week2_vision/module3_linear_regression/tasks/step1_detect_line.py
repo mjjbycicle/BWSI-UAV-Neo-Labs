@@ -32,7 +32,7 @@ _timer = 0.0
 _done  = False
 _hold = 0.0
 
-full_controller = PDControl.FullController(kp_alt=1.5, max_throttle=0.8)
+full_controller = PDControl.FullController(kp_alt=1, max_throttle=0.8)
 
 def reset():
     global _timer, _done
@@ -52,13 +52,10 @@ def update(drone):
     # threshold by saturation: neo_lab.saturated_mask(image, S_MIN) gives a mask of the line
     # pixels. Count them, print the count, and set _done. See the README (Key terms).
 
-    if _timer < 4 and drone.physics.get_altitude() < 2:
-        drone.flight.send_pcmd(0, 0, 0, 1)
-    else:
-        full_controller.set_setpoint(_alt=TARGET_HEIGHT)
-        output = full_controller.calculate(_alt=drone.physics.get_altitude(), _alt_vel=drone.physics.get_linear_velocity()[1])[3]
-        drone.flight.send_pcmd(0, 0, 0, output)
-        print(f"alt: {drone.physics.get_altitude()}, output: {output}")
+    full_controller.set_setpoint(_alt=TARGET_HEIGHT)
+    output = full_controller.calculate(_alt=drone.physics.get_altitude(), _alt_vel=drone.physics.get_linear_velocity()[1])[3]
+    drone.flight.send_pcmd(0, 0, 0, output)
+    print(f"alt: {drone.physics.get_altitude()}, output: {output}")
     # drone.flight.goto_position(0, 1, 0)
 
     _timer += drone.get_delta_time()

@@ -26,7 +26,7 @@ _timer = 0.0
 _done = False
 
 full_controller = PDControl.FullController(kp_yaw=0.01, kp_alt=1, max_yaw=0.7, max_throttle=0.8)
-roll_controller = PDControl.PDController(0.6, 0.0, 0.4)
+roll_controller = PDControl.PDController(0.6, 0.0, 0.2)
 direction_filter = fu.VectorExponentialLowPassFilter(0.95)
 mean_filter = fu.VectorExponentialLowPassFilter(0.95)
 
@@ -101,7 +101,7 @@ def line_control_loop(drone):
                     set_flight_command("LINE_FOLLOW", 0, roll, 0, 0)
                     continue
 
-            _direction, _mean = lu.fit_line(points[:, 1], points[:, 0])
+            _direction, _mean = lu.fit_lines(image)
             direction = direction_filter(_direction)
             mean = mean_filter(_mean)
             angle = np.arctan(direction[0] / direction[1])
@@ -110,13 +110,11 @@ def line_control_loop(drone):
             target_angle = angle
 
             if abs(roll_err) < 160:
-                ADVANCE_PITCH = 0.2
-                roll_controller.kp = 1.0
+                ADVANCE_PITCH = 0.3
+                roll_controller.kp = 0.4
                 roll_controller.max_output = 0.4
                 mode = "Straight"
             else:
-                ADVANCE_PITCH = 0.2
-                roll_controller.kp = 1.0
                 ADVANCE_PITCH = 0.2
                 roll_controller.kp = 0.4
                 mode = "Roll Correct"
@@ -127,7 +125,6 @@ def line_control_loop(drone):
             # print(f"roll err: {normalized_roll_err}, target angle: {target_angle}")
             target_angle -= normalized_roll_err * 5
             roll = -roll_controller.calculate_position(normalized_roll_err, dt)
-            roll = drone_utils.clamp(roll, -1, 1)
             output = full_controller.calculate(_alt=drone.physics.get_altitude(),
                                                _alt_vel=drone.physics.get_linear_velocity()[1],
                                                _yaw=target_angle, dt=dt)
