@@ -64,7 +64,7 @@ def line_control_loop(drone):
     _prev_bottom_mean = None
 
     # Target 20 frames per second (0.05 seconds per loop)
-    target_fps = 20.0
+    target_fps = 50.0
     loop_delay = 1.0 / target_fps
 
     last_time = time.time()
@@ -131,7 +131,7 @@ def line_control_loop(drone):
                                                _yaw=target_angle, dt=dt)
             roll += DRIFT_FF * output[2]
             roll = max(-1, min(1, roll))
-            print(f"roll: {roll}, yaw: {output[2]}, target angle: {target_angle}, target height: {_target_height}")
+            # print(f"roll: {roll}, yaw: {output[2]}, target angle: {target_angle}, target height: {_target_height}")
             # print(f"closest dist int: {_dist_to_gate_int}")
             # print(f"direction: {direction}")
             # UPDATE THREAD STATE INSTEAD OF SENDING
@@ -188,13 +188,7 @@ def gate_detect_loop(drone):
                 # The drone would need to be able to get to the target height by the time it travels the threshold distance
                 if closest_val <= CLOSEST_GATE_THRESHOLD:
                     _target_height = closest_gate.altitude_filter.x[0, 0]
-                    _closest_dist = closest_val
-                    _dist_to_gate_int = None
-                else:
-                    if _dist_to_gate_int is None:
-                        _dist_to_gate_int = _closest_dist
-                    else:
-                        _dist_to_gate_int -= dt * drone.physics.get_linear_velocity()[2]
+                    print(closest_val)
 
                 """
                 Experimental algorithm in case the above code doesn't work
