@@ -1,4 +1,5 @@
 import math
+from typing import Any
 
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import minimum_spanning_tree, depth_first_order
@@ -9,10 +10,10 @@ import neo_lab
 
 IMAGE_HEIGHT = 480
 MIN_PX = 200
-TEST_PATH = "line_images/line_test_image1.jpeg"
+TEST_PATH = "nadir test.jpg"
 OUTPUT_PATH = "line_images/debug_output.jpeg"
-V_MIN = 220
-S_MAX = 50
+V_MIN = 210
+S_MAX = 20
 
 
 def downsample_points_grid(points, target_points=1500):
@@ -42,12 +43,19 @@ def fit_line(x, y):
 
 
 def fit_lines(image):
-    v_mask = neo_lab.bright_mask(image, V_MIN)
-    s_mask = neo_lab.saturated_mask(image, S_MAX)
-    points = get_points(mask)
-    if points is None: points = np.argwhere(mask == 255)
+    points = get_inter_points(image)
     direction, mean = fit_line(points[:, 1], points[:, 0])
     return direction, mean
+
+
+def get_inter_points(image):
+    v_mask = neo_lab.bright_mask(image, V_MIN)
+    s_mask = neo_lab.saturated_mask(image, S_MAX)
+    points = get_points(v_mask)
+    s_points = np.argwhere(s_mask==255)
+    if points is None: points = np.argwhere(v_mask==255)
+    # points = coord_intersection(v_points, s_points)
+    return points
 
 
 def get_points(mask):
@@ -89,8 +97,8 @@ def debug(image, points):
             -1
         )
 
-    direction, centroid = fit_lines(image)
-    # direction, centroid = fit_line(points[:, 1], points[:, 0])
+    # direction, centroid = fit_lines(image)
+    direction, centroid = fit_line(points[:, 1], points[:, 0])
     cx, cy = int(centroid[0]), int(centroid[1])
     cv2.circle(
         image,
@@ -112,16 +120,18 @@ def debug(image, points):
         3
     )
 
-    # cv2.imwrite(OUTPUT_PATH, image)
+    cv2.imwrite(OUTPUT_PATH, image)
 
 
 def coord_intersection(coord1, coord2):
+    if coord1 is None: return coord2
+    if coord2 is None: return coord1
     void_dt = np.dtype((np.void, coord1.dtype.itemsize * coord1.shape[1]))
     v1 = np.ascontiguousarray(coord1).view(void_dt)
     v2 = np.ascontiguousarray(coord2).view(void_dt)
-    common_voids = np.intersect1d(v1, v2)
-    common_coords = common_voids.view(coord1.dtype).reshape(-1, coord1.shape[1])
-    return common_coords
+    _, idx, _ = np.intersect1d(v1, v2, return_indices=True)
+    result = coord1[idx]
+    return result
 
 
 if __name__ == "__main__":
@@ -132,8 +142,5 @@ if __name__ == "__main__":
         print("No image detected")
     else:
         image = cv2.resize(image, (640, 480), interpolation=cv2.INTER_LINEAR)
-        mask = neo_lab.bright_mask(image, V_MIN)
-        # points = np.argwhere(mask == 255)
-        points = get_points(mask)
 
-        debug(image, points)
+        debug(image, get_inter_points(image))
