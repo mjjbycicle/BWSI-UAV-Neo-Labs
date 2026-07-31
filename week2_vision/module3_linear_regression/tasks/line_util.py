@@ -114,8 +114,8 @@ def get_line_points(points):
         # Prefer large, centered, lower blobs
         score = (
             area
-            - 300 * center_distance
-            - 100 * bottom_distance
+            - 100 * center_distance
+            - 200 * bottom_distance
         )
 
         if score > best_score:
