@@ -1,9 +1,9 @@
 import cv2
 import numpy as np
-from . import filter_util as fu
+import filter_util as fu
 # import filter_util as fu
 
-TEST_PATH = "gate_images/aruco_test_image8.jpeg"
+TEST_PATH = "gate_images/aruco_test_image1.jpeg"
 OUTPUT_PATH = "gate_images/debug_output.jpeg"
 
 ARUCO_DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_250)  # Type of aruco tag
@@ -372,3 +372,69 @@ def parse_aruco_returns(corners, ids):
         detected_tags.append(Tag(tag_id, center_pixel, pixel_width))
 
     return detected_tags
+
+
+# Made using GPT, also bricked rn since the test images have the wrong tag ids
+if __name__ == "__main__":
+    image = cv2.imread(TEST_PATH)
+
+    if image is None:
+        print(f"Could not load image: {TEST_PATH}")
+        exit()
+
+    image = cv2.resize(image, (IMAGE_WIDTH, IMAGE_HEIGHT))
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    corners, ids, rejected = DETECTOR.detectMarkers(gray)
+
+    center = None
+
+    print("=" * 60)
+    print("ARUCO DETECTION")
+    print("=" * 60)
+
+    if ids is None:
+        print("No markers detected.")
+    else:
+        detected_tags = parse_aruco_returns(corners, ids)
+
+        print(f"Detected {len(detected_tags)} marker(s):\n")
+
+        for tag in detected_tags:
+            print(f"Tag ID: {tag.id}")
+            print(f"  Center Pixel : ({tag.center_pixel[0]:.1f}, {tag.center_pixel[1]:.1f})")
+            print(f"  Pixel Width  : {tag.pixel_width:.1f} px")
+            print(f"  Gate ID      : {ID_TO_GATE_ID[tag.id]}")
+            print(f"  Corner Index : {ID_TO_CORNER_IDX[tag.id]}")
+            print()
+
+        gate_measurements = process_frame(
+            detected_tags,
+            current_time=0.0,
+            altitude=0.0,
+            forward_velocity=0.0
+        )
+
+        print("=" * 60)
+        print("GATE ESTIMATES")
+        print("=" * 60)
+
+        if not gate_measurements:
+            print("No gates estimated.")
+        else:
+            for gate_id, measurement in gate_measurements.items():
+                print(f"Gate {gate_id}")
+                print(f"  Tags Used        : {measurement.tag_count}")
+                print(f"  Distance         : {measurement.distance_measurement:.3f} m")
+                print(f"  Lateral Offset   : {measurement.lateral_offset_measurement:.3f} m")
+                print(f"  Relative Height  : {measurement.altitude_measurement:.3f} m")
+                print()
+
+        # Average marker center for visualization
+        pixels = np.array([tag.center_pixel for tag in detected_tags])
+        center = np.mean(pixels, axis=0)
+
+    debug(corners, ids, rejected, image, center)
+
+    print("=" * 60)
+    print(f"Debug image saved to {OUTPUT_PATH}")
