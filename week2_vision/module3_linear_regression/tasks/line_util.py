@@ -10,7 +10,7 @@ import neo_lab
 IMAGE_HEIGHT = 480
 IMAGE_WIDTH = 640
 MIN_PX = 200
-TEST_PATH = "line_images/line_test_image6.jpeg"
+TEST_PATH = "line_images/line_test_image5.jpeg"
 OUTPUT_PATH = "line_images/debug_output.jpeg"
 S_MIN = 200
 
@@ -113,8 +113,8 @@ def get_line_points(points):
         # Prefer large, centered, lower blobs
         score = (
             area
-            - 300 * center_distance
-            - 100 * bottom_distance
+            - 100 * center_distance
+            - 200 * bottom_distance
         )
 
         if score > best_score:
