@@ -14,12 +14,12 @@ IMAGE_WIDTH = 640
 MIN_PX = 200
 TEST_PATH = "nadir test.jpg"
 OUTPUT_PATH = "line_images/debug_output.jpeg"
-V_MIN = 210
+V_MIN = 190
 S_MAX = 20
 S_MIN = 200
 
 TOP_PERCENT = 0.5 # Which percent of the top part of the image gets weighted
-TOP_WEIGHT = 4.0  # How much more weight the top part is given compared to the bottom
+TOP_WEIGHT = 2.0  # How much more weight the top part is given compared to the bottom
 
 TEST_PATH = "line_images/line_test_image8.jpeg"
 OUTPUT_PATH = "line_images/debug_output.jpeg"
