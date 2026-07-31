@@ -27,11 +27,11 @@ _ground_alt = 0.0
 # The ground line is recolored each run, but always vivid against a grey floor, so HSV
 # Saturation isolates it regardless of which color the run picked.
 
-def saturated_mask(image, s_min=100):
+def saturated_mask(image, s_max=100):
     """Binary mask (0/255) of vivid colored regions by HSV Saturation. Color-agnostic,
     so it survives the per-run recoloring of the line."""
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    return (hsv[:, :, 1] > s_min).astype(np.uint8) * 255
+    return (hsv[:, :, 1] < s_max).astype(np.uint8) * 255
 
 
 def bright_mask(image, s_min=100):

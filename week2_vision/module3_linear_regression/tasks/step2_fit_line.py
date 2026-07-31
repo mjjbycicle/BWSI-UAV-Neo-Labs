@@ -20,16 +20,17 @@ ADVANCE_TIME = 8.0  # seconds of forward flight before fitting
 K_CURVE = 0.1
 COL_CENTER = 320
 CLOSEST_GATE_THRESHOLD = 2.0
-DRIFT_FF = 0.25
+DRIFT_FF = 0.5
+FAR_KEEP_FRACTION = 0.25
 
 # -- Module-level state -----------------------------------------------------
 _timer = 0.0
 _done = False
 
-full_controller = PDControl.FullController(kp_yaw=0.017, kp_alt=1, max_yaw=1.0, max_throttle=0.8)
+full_controller = PDControl.FullController(kp_yaw=0.01, kp_alt=1, max_yaw=1.0, max_throttle=0.8)
 roll_controller = PDControl.PDController(0.6, 1.3, 0.2)
-direction_filter = fu.VectorExponentialLowPassFilter(0.95)
-mean_filter = fu.VectorExponentialLowPassFilter(0.95)
+direction_filter = fu.VectorExponentialLowPassFilter(0.999)
+mean_filter = fu.VectorExponentialLowPassFilter(0.999)
 
 mode = "None"
 _command_lock = threading.Lock()
@@ -41,11 +42,12 @@ _latest_cmd = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "throttle": 0.0}
 _gate_detect_thread = None
 _gate_detect_running = False
 _prev_closest_gate = None
-_target_height = 1.0
-_accepting_new_height = True
+_target_height = 1.5
+_closest_dist = 0.0
 _gates = dict()
 for i in range(gd.NUM_GATES):
     _gates[i] = gd.Gate(0.0, i)
+_dist_to_gate_int = None
 
 
 def reset():
@@ -79,6 +81,8 @@ def line_control_loop(drone):
 
         if _image is not None:
             image = cv2.resize(_image, (640, 480), interpolation=cv2.INTER_LINEAR)
+            keep_until_row = int(image.shape[0] * FAR_KEEP_FRACTION)
+            image[keep_until_row:, :] = 0
             mask = neo_lab.bright_mask(image, S_MIN)
             points = np.argwhere(mask == 255)
 
@@ -124,7 +128,6 @@ def line_control_loop(drone):
             full_controller.set_setpoint(_alt=_target_height)
             normalized_roll_err = roll_err / COL_CENTER
             # print(f"roll err: {normalized_roll_err}, target angle: {target_angle}")
-            target_angle -= normalized_roll_err * 5
             roll = -roll_controller.calculate_position(normalized_roll_err, dt)
             output = full_controller.calculate(_alt=drone.physics.get_altitude(),
                                                _alt_vel=drone.physics.get_linear_velocity()[1],
@@ -132,6 +135,8 @@ def line_control_loop(drone):
             roll += DRIFT_FF * output[2]
             roll = max(-1, min(1, roll))
             print(f"roll: {roll}, yaw: {output[2]}, target angle: {target_angle}, target height: {_target_height}")
+            # print(f"closest dist int: {_dist_to_gate_int}")
+            # print(f"direction: {direction}")
             # UPDATE THREAD STATE INSTEAD OF SENDING
             set_flight_command("LINE_FOLLOW", ADVANCE_PITCH, roll, output[2], output[3])
             _prev_roll_err = roll_err
@@ -148,17 +153,21 @@ def line_control_loop(drone):
 
 
 def gate_detect_loop(drone):
-    global _timer, _done, mode, _prev_closest_gate, _target_height
+    global _timer, _done, mode, _prev_closest_gate, _target_height, _dist_to_gate_int, _closest_dist
     global _line_follow_running, _latest_cmd
 
     # Target 20 frames per second (0.05 seconds per loop)
     target_fps = 20.0
     loop_delay = 1.0 / target_fps
+    last_time = time.time()
 
     while _gate_detect_running:
         loop_start_time = time.time()
 
         _image = drone.camera.get_color_image_async()
+
+        dt = loop_start_time - last_time
+        last_time = loop_start_time
 
         closest_gate = None
         closest_val = float("inf")
@@ -182,6 +191,13 @@ def gate_detect_loop(drone):
                 # The drone would need to be able to get to the target height by the time it travels the threshold distance
                 if closest_val <= CLOSEST_GATE_THRESHOLD:
                     _target_height = closest_gate.altitude_filter.x[0, 0]
+                    _closest_dist = closest_val
+                    _dist_to_gate_int = None
+                else:
+                    if _dist_to_gate_int is None:
+                        _dist_to_gate_int = _closest_dist
+                    else:
+                        _dist_to_gate_int -= dt * drone.physics.get_linear_velocity()[2]
 
                 """
                 Experimental algorithm in case the above code doesn't work
