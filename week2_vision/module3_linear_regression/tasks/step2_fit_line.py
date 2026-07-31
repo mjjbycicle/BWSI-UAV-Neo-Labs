@@ -19,7 +19,7 @@ ADVANCE_PITCH = 0.1  # fly forward off the spawn pad to reach the line
 ADVANCE_TIME = 8.0  # seconds of forward flight before fitting
 K_CURVE = 0.1
 COL_CENTER = 320
-CLOSEST_GATE_THRESHOLD = 2.0
+CLOSEST_GATE_THRESHOLD = 3.0
 DRIFT_FF = 0.1
 
 # -- Module-level state -----------------------------------------------------
@@ -174,6 +174,7 @@ def gate_detect_loop(drone):
             gate_measurements = gd.detect_gates(image, _timer, drone.physics.get_altitude(),
                                                 drone.physics.get_linear_velocity()[2])
             if gate_measurements is not None:
+                print(len(gate_id))
                 for (gate_id, gate_measurement) in gate_measurements.items():
                     if gate_measurement is not None:
                         _gates[gate_id].update(gate_measurement)
