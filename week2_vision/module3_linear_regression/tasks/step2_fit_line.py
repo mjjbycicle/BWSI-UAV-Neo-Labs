@@ -25,11 +25,11 @@ CLOSEST_GATE_THRESHOLD = 2.0
 _timer = 0.0
 _done = False
 
-full_controller = PDControl.FullController(kp_yaw=0.01, kp_alt=1, max_yaw=0.7, max_throttle=0.8)
-roll_controller = PDControl.PDController(0.6, 3.0, 0.2)
+full_controller = PDControl.FullController(kp_yaw=0.01, kp_alt=1, max_yaw=0.4, max_throttle=0.8)
+roll_controller = PDControl.PDController(0.6, 5.0, 0.2)
 direction_filter = fu.VectorExponentialLowPassFilter(0.95)
 mean_filter = fu.VectorExponentialLowPassFilter(0.95)
-drift_kff = 1.0
+drift_kff = 0.75
 
 mode = "None"
 _command_lock = threading.Lock()
@@ -113,13 +113,13 @@ def line_control_loop(drone):
             if abs(roll_err) < 100 and abs(target_angle) < 30:
                 ADVANCE_PITCH = 0.05
                 roll_controller.kp = 0.4
-                full_controller.yaw.kp = 0.015
+                full_controller.yaw.kp = 0.02
                 roll_controller.max_output = 0.5
                 mode = "Straight"
             else:
                 ADVANCE_PITCH = 0.01
                 roll_controller.kp = 0.4
-                full_controller.yaw.kp = 0.015
+                full_controller.yaw.kp = 0.02
                 mode = "Roll Correct"
                 roll_controller.max_output = 0.5
 

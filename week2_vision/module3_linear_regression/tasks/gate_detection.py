@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-import filter_util as fu
+from . import filter_util as fu
 # import filter_util as fu
 
 TEST_PATH = "gate_images/aruco_test_image1.jpeg"
