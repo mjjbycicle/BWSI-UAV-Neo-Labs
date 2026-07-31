@@ -21,10 +21,11 @@ if _d not in _sys.path:
     _sys.path.insert(0, _d)
 import neo_lab
 from . import PDControl
+from . import line_util as lu
 
 # -- Constants --------------------------------------------------------------
 S_MIN         = 100
-TARGET_HEIGHT = 0.5
+TARGET_HEIGHT = 1.0
 ADVANCE_TIME  = 60       # seconds of forward flight before reporting
 
 # -- Module-level state -----------------------------------------------------
@@ -32,7 +33,7 @@ _timer = 0.0
 _done  = False
 _hold = 0.0
 
-full_controller = PDControl.FullController(kp_alt=1, max_throttle=0.8)
+full_controller = PDControl.FullController(kp_yaw=0.01, kp_alt=1, max_yaw=0.7, max_throttle=0.8)
 
 def reset():
     global _timer, _done
@@ -52,11 +53,15 @@ def update(drone):
     # threshold by saturation: neo_lab.saturated_mask(image, S_MIN) gives a mask of the line
     # pixels. Count them, print the count, and set _done. See the README (Key terms).
 
-    full_controller.set_setpoint(_alt=TARGET_HEIGHT)
-    output = full_controller.calculate(_alt=drone.physics.get_altitude(), _alt_vel=drone.physics.get_linear_velocity()[1])[3]
-    drone.flight.send_pcmd(0, 0, 0, output)
-    print(f"alt: {drone.physics.get_altitude()}, output: {output}")
-    # drone.flight.goto_position(0, 1, 0)
+    # full_controller.set_setpoint(_alt=TARGET_HEIGHT)
+    # drone.flight.send_pcmd(0, 0, 0, output)
+    # print(f"alt: {drone.physics.get_altitude()}, output: {output}")
+    # image = drone.camera.get_downward_image_async()
+    # direction, mean = lu.fit_lines(image)
+    # angle = np.degrees(np.arctan(direction[0] / direction[1]))
+    # print(angle)
+    # output = full_controller.calculate(_yaw = angle, dt = drone.get_delta_time())[2]
+    drone.flight.send_pcmd_with_alt_hold(0, 0, 0, TARGET_HEIGHT)
 
     _timer += drone.get_delta_time()
 

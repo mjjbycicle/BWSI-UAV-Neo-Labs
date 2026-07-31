@@ -9,9 +9,10 @@ import neo_lab
 
 IMAGE_HEIGHT = 480
 MIN_PX = 200
-TEST_PATH = "line_images/line_test_image1.jpeg"
+TEST_PATH = "line_images/sim nadir.png"
 OUTPUT_PATH = "line_images/debug_output.jpeg"
-S_MIN = 210
+S_MIN = 100
+
 
 def downsample_points_grid(points, target_points=1500):
     x_range, y_range = np.ptp(points, axis=0)
@@ -44,16 +45,16 @@ def fit_lines(image):
     mid_third = mask[int(IMAGE_HEIGHT / 3): int(IMAGE_HEIGHT * 2 / 3)]
     # mid_points = np.argwhere(mid_third==255)
     mid_points = get_points(mid_third)
-    points = np.argwhere(mask==255)
-    if len(mid_points) < 200: mid_points = points
-    direction, _mean = fit_line(points[:, 1], points[:, 0])
-    _direction, mean = fit_line(mid_points[:, 1], mid_points[:, 0])
-    mean[1] += IMAGE_HEIGHT / 3
+    points = get_points(mask)
+    if points is None: points = np.argwhere(mask == 255)
+    if mid_points is None or len(mid_points) < 200: mid_points = points
+    direction, mean = fit_line(points[:, 1], points[:, 0])
+    _direction, _mean = fit_line(mid_points[:, 1], mid_points[:, 0])
+    _mean[1] += IMAGE_HEIGHT / 3
     return direction, mean
 
 
 def get_points(mask):
-
     MIN_COMPONENT_AREA = 1000
 
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
@@ -80,7 +81,7 @@ def debug(image, points):
     if points is None:
         print("No points detected")
         return
-    
+
     if len(points) < MIN_PX:
         print(f"Only {len(points)} pixels found")
     for point in points:
@@ -93,7 +94,7 @@ def debug(image, points):
         )
 
     direction, centroid = fit_lines(image)
-    #direction, centroid = fit_line(points[:, 1], points[:, 0])
+    # direction, centroid = fit_line(points[:, 1], points[:, 0])
     cx, cy = int(centroid[0]), int(centroid[1])
     cv2.circle(
         image,
@@ -116,7 +117,7 @@ def debug(image, points):
     )
 
     cv2.imwrite(OUTPUT_PATH, image)
-    
+
 
 if __name__ == "__main__":
     image = cv2.imread(TEST_PATH)

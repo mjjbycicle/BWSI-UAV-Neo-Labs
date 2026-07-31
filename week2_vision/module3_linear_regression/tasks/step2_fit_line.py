@@ -13,7 +13,7 @@ from . import neo_lab
 from . import threading_util as tu
 
 # -- Constants --------------------------------------------------------------
-S_MIN = 200
+S_MIN = 100
 MIN_PIXELS = 200
 ADVANCE_PITCH = 0.1  # fly forward off the spawn pad to reach the line
 ADVANCE_TIME = 8.0  # seconds of forward flight before fitting
@@ -26,9 +26,10 @@ _timer = 0.0
 _done = False
 
 full_controller = PDControl.FullController(kp_yaw=0.01, kp_alt=1, max_yaw=0.7, max_throttle=0.8)
-roll_controller = PDControl.PDController(0.6, 0.0, 0.2)
+roll_controller = PDControl.PDController(0.6, 3.0, 0.2)
 direction_filter = fu.VectorExponentialLowPassFilter(0.95)
 mean_filter = fu.VectorExponentialLowPassFilter(0.95)
+drift_kff = 1.0
 
 mode = "None"
 _command_lock = threading.Lock()
@@ -36,11 +37,11 @@ _active_flight_mode = "LINE_FOLLOW"
 
 _line_follow_thread = None
 _line_follow_running = False
-_latest_cmd = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "throttle": 0.0}
+_latest_cmd = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "altitude": 0.0}
 _gate_detect_thread = None
 _gate_detect_running = False
 _prev_closest_gate = None
-_target_height = 0.5
+_target_height = 1.5
 _accepting_new_height = True
 _gates = dict()
 for i in range(gd.NUM_GATES):
@@ -98,7 +99,7 @@ def line_control_loop(drone):
                     roll = -roll_controller.calculate_position(normalized_roll_err, dt)
 
                     # UPDATE THREAD STATE INSTEAD OF SENDING
-                    set_flight_command("LINE_FOLLOW", 0, roll, 0, 0)
+                    set_flight_command("LINE_FOLLOW", 0, roll, 0, _target_height)
                     continue
 
             _direction, _mean = lu.fit_lines(image)
@@ -109,28 +110,29 @@ def line_control_loop(drone):
             roll_err = mean[0] - COL_CENTER
             target_angle = angle
 
-            if abs(roll_err) < 160:
-                ADVANCE_PITCH = 0.3
+            if abs(roll_err) < 100 and abs(target_angle) < 30:
+                ADVANCE_PITCH = 0.05
                 roll_controller.kp = 0.4
-                roll_controller.max_output = 0.4
+                full_controller.yaw.kp = 0.015
+                roll_controller.max_output = 0.5
                 mode = "Straight"
             else:
-                ADVANCE_PITCH = 0.2
+                ADVANCE_PITCH = 0.01
                 roll_controller.kp = 0.4
+                full_controller.yaw.kp = 0.015
                 mode = "Roll Correct"
-                roll_controller.max_output = 0.4
+                roll_controller.max_output = 0.5
 
-            full_controller.set_setpoint(_alt=_target_height)
             normalized_roll_err = roll_err / COL_CENTER
-            # print(f"roll err: {normalized_roll_err}, target angle: {target_angle}")
+            # print(f"roll err: {roll_err}, norm err: {normalized_roll_err}, target angle: {target_angle}")
             target_angle -= normalized_roll_err * 5
             roll = -roll_controller.calculate_position(normalized_roll_err, dt)
-            output = full_controller.calculate(_alt=drone.physics.get_altitude(),
-                                               _alt_vel=drone.physics.get_linear_velocity()[1],
-                                               _yaw=target_angle, dt=dt)
-            print(f"roll: {roll}, yaw: {output[2]}, target angle: {target_angle}, target height: {_target_height}")
+            output = full_controller.calculate(_yaw=target_angle, dt=dt)
+            roll += drift_kff * output[2]
+            roll = max(-1, min(1, roll))
+            print(f"roll: {roll}, drift ff: {drift_kff * output[2]}, yaw: {output[2]}, target angle: {target_angle}, target height: {_target_height}")
             # UPDATE THREAD STATE INSTEAD OF SENDING
-            set_flight_command("LINE_FOLLOW", ADVANCE_PITCH, roll, output[2], output[3])
+            set_flight_command("LINE_FOLLOW", ADVANCE_PITCH, roll, output[2], _target_height)
             _prev_roll_err = roll_err
 
         # Small sleep to prevent this loop from maxing out a CPU core
@@ -237,17 +239,17 @@ def update(drone):
     current_cmd = _latest_cmd
 
     # Fast-publish the most recent command calculated by the vision thread
-    drone.flight.send_pcmd(
+    drone.flight.send_pcmd_with_alt_hold(
         current_cmd["pitch"],
         current_cmd["roll"],
         current_cmd["yaw"],
-        current_cmd["throttle"]
+        current_cmd["altitude"]
     )
 
     return _done
 
 
-def set_flight_command(caller_mode, pitch, roll, yaw, throttle):
+def set_flight_command(caller_mode, pitch, roll, yaw, altitude):
     global _latest_cmd
 
     with _command_lock:
@@ -256,4 +258,4 @@ def set_flight_command(caller_mode, pitch, roll, yaw, throttle):
             _latest_cmd["pitch"] = pitch
             _latest_cmd["roll"] = roll
             _latest_cmd["yaw"] = yaw
-            _latest_cmd["throttle"] = throttle
+            _latest_cmd["altitude"] = altitude
