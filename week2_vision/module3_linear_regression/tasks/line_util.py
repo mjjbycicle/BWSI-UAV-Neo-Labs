@@ -9,10 +9,16 @@ import neo_lab
 
 IMAGE_HEIGHT = 480
 IMAGE_WIDTH = 640
+
 MIN_PX = 200
+S_MIN = 200
+
+TOP_PERCENT = 0.5
+TOP_WEIGHT = 4.0
+
 TEST_PATH = "line_images/line_test_image5.jpeg"
 OUTPUT_PATH = "line_images/debug_output.jpeg"
-S_MIN = 200
+
 
 
 def downsample_points_grid(points, target_points=1500):
@@ -24,19 +30,37 @@ def downsample_points_grid(points, target_points=1500):
     return points[unique_indices]
 
 
+# Computes the line of best fit and mean of all points
+# GPT made it so that some points (some fraction of the top image) is weighted more
 def fit_line(x, y):
     mx = np.mean(x)
     my = np.mean(y)
-    centroid = np.array([mx, my])
     dx = x - mx
     dy = y - my
-    sxx = np.dot(dx, dx)
-    syy = np.dot(dy, dy)
-    sxy = np.dot(dx, dy)
+
+    weights = np.ones(len(y))
+
+    # Weight upper portion of image more
+    top_threshold = np.max(y) * TOP_PERCENT
+    weights[y < top_threshold] = TOP_WEIGHT
+
+    # Weighted covariance
+    sxx = np.sum(weights * dx * dx)
+    syy = np.sum(weights * dy * dy)
+    sxy = np.sum(weights * dx * dy)
+
     cov_matrix = np.array([[sxx, sxy],
                            [sxy, syy]])
     eigenvalues, eigenvectors = np.linalg.eigh(cov_matrix)
     direction = np.array(eigenvectors[:, -1])
+
+    # Make centroid weighted too
+    centroid = np.array([
+        np.sum(weights * x) / np.sum(weights),
+        np.sum(weights * y) / np.sum(weights)
+    ])
+
+    # centroid = np.array([mx, my])
 
     return direction, centroid
 
