@@ -23,11 +23,13 @@ CLOSEST_GATE_THRESHOLD = 4.0
 DRIFT_FF = 0.15
 SIDE_CROP = 100
 VERT_CROP = 120
+GATE_TIME = 20
 
 # -- Module-level state -----------------------------------------------------
 _timer = 0.0
 _done = False
 _height_measurement = False
+_through_time = -1
 
 full_controller = PDControl.FullController(kp_yaw=0.09, kd_yaw=0.1, kp_alt=1, max_yaw=1.0, max_throttle=0.8)
 roll_controller = PDControl.PDController(0.6, 2, 0.2)
@@ -156,7 +158,7 @@ def line_control_loop(drone):
 
 def gate_detect_loop(drone):
     global _timer, _done, mode, _prev_closest_gate, _target_height, _dist_to_gate_int, _closest_dist, _height_measurement
-    global _line_follow_running, _latest_cmd
+    global _line_follow_running, _latest_cmd, _target_height
 
     # Target 20 frames per second (0.05 seconds per loop)
     target_fps = 20.0
@@ -195,6 +197,11 @@ def gate_detect_loop(drone):
                 if closest_val <= CLOSEST_GATE_THRESHOLD:
                     _target_height = closest_gate.altitude_filter.x[0, 0]
                     _height_measurement = True
+                else:
+                    if _height_measurement:
+                        _through_time = time.time()
+                    if time.time() - _through_time > GATE_TIME:
+                        _target_height = 0.8
 
                 """
                 Experimental algorithm in case the above code doesn't work
