@@ -55,7 +55,7 @@ def fit_lines(image):
 
 
 def get_points(mask):
-    MIN_COMPONENT_AREA = 500
+    MIN_COMPONENT_AREA = 1000
 
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
 
