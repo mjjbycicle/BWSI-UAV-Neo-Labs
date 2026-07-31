@@ -20,8 +20,7 @@ ADVANCE_TIME = 8.0  # seconds of forward flight before fitting
 K_CURVE = 0.1
 COL_CENTER = 320
 CLOSEST_GATE_THRESHOLD = 2.0
-DRIFT_FF = 0.25
-FAR_KEEP_FRACTION = 0.25
+DRIFT_FF = 0.1
 
 # -- Module-level state -----------------------------------------------------
 _timer = 0.0
@@ -29,8 +28,8 @@ _done = False
 
 full_controller = PDControl.FullController(kp_yaw=0.125, kp_alt=1, max_yaw=1.0, max_throttle=0.8)
 roll_controller = PDControl.PDController(0.6, 2.0, 0.2)
-direction_filter = fu.VectorExponentialLowPassFilter(0.999)
-mean_filter = fu.VectorExponentialLowPassFilter(0.999)
+direction_filter = fu.VectorExponentialLowPassFilter(0.99)
+mean_filter = fu.VectorExponentialLowPassFilter(0.99)
 
 mode = "None"
 _command_lock = threading.Lock()
@@ -42,7 +41,7 @@ _latest_cmd = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "throttle": 0.0}
 _gate_detect_thread = None
 _gate_detect_running = False
 _prev_closest_gate = None
-_target_height = 0.75
+_target_height = 0.8
 _closest_dist = 0.0
 _gates = dict()
 for i in range(gd.NUM_GATES):
@@ -81,8 +80,6 @@ def line_control_loop(drone):
 
         if _image is not None:
             image = cv2.resize(_image, (640, 480), interpolation=cv2.INTER_LINEAR)
-            keep_until_row = int(image.shape[0] * FAR_KEEP_FRACTION)
-            image[keep_until_row:, :] = 0
             mask = neo_lab.bright_mask(image, S_MIN)
             points = np.argwhere(mask == 255)
 
