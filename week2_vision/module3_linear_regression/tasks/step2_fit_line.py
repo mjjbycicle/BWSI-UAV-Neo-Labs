@@ -13,7 +13,7 @@ from . import neo_lab
 from . import threading_util as tu
 
 # -- Constants --------------------------------------------------------------
-S_MIN = 100
+S_MIN = 200
 MIN_PIXELS = 200
 ADVANCE_PITCH = 0.1  # fly forward off the spawn pad to reach the line
 ADVANCE_TIME = 8.0  # seconds of forward flight before fitting
@@ -80,7 +80,7 @@ def line_control_loop(drone):
         if _image is not None:
             image = cv2.resize(_image, (640, 480), interpolation=cv2.INTER_LINEAR)
             mask = neo_lab.bright_mask(image, S_MIN)
-            points = np.argwhere(mask == 255)
+            points = lu.get_points(mask)
 
             if len(points) < MIN_PIXELS or _return_timer != 0:
                 _return_timer += dt

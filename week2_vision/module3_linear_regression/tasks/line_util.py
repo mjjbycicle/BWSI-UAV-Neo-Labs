@@ -9,9 +9,9 @@ import neo_lab
 
 IMAGE_HEIGHT = 480
 MIN_PX = 200
-TEST_PATH = "line_images/sim nadir.png"
+TEST_PATH = "line_images/line_test_image4.jpeg"
 OUTPUT_PATH = "line_images/debug_output.jpeg"
-S_MIN = 100
+S_MIN = 200
 
 
 def downsample_points_grid(points, target_points=1500):
@@ -93,8 +93,8 @@ def debug(image, points):
             -1
         )
 
-    direction, centroid = fit_lines(image)
-    # direction, centroid = fit_line(points[:, 1], points[:, 0])
+    # direction, centroid = fit_lines(image)
+    direction, centroid = fit_line(points[:, 1], points[:, 0])
     cx, cy = int(centroid[0]), int(centroid[1])
     cv2.circle(
         image,
