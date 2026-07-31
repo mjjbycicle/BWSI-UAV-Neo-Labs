@@ -11,7 +11,7 @@ IMAGE_HEIGHT = 480
 MIN_PX = 200
 TEST_PATH = "line_images/line_test_image1.jpeg"
 OUTPUT_PATH = "line_images/debug_output.jpeg"
-S_MIN = 210
+S_MIN = 230
 
 def downsample_points_grid(points, target_points=1500):
     x_range, y_range = np.ptp(points, axis=0)
@@ -44,17 +44,18 @@ def fit_lines(image):
     mid_third = mask[int(IMAGE_HEIGHT / 3): int(IMAGE_HEIGHT * 2 / 3)]
     # mid_points = np.argwhere(mid_third==255)
     mid_points = get_points(mid_third)
+    if mid_points is None: mid_points = np.argwhere(mid_third==255)
     points = np.argwhere(mask==255)
     if len(mid_points) < 200: mid_points = points
-    direction, _mean = fit_line(points[:, 1], points[:, 0])
-    _direction, mean = fit_line(mid_points[:, 1], mid_points[:, 0])
+    direction, mean = fit_line(points[:, 1], points[:, 0])
+    _direction, _mean = fit_line(mid_points[:, 1], mid_points[:, 0])
     mean[1] += IMAGE_HEIGHT / 3
     return direction, mean
 
 
 def get_points(mask):
 
-    MIN_COMPONENT_AREA = 1000
+    MIN_COMPONENT_AREA = 4000
 
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
 

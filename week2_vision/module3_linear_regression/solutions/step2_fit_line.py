@@ -22,7 +22,7 @@ if _d not in _sys.path:
 import neo_lab
 
 # -- Constants --------------------------------------------------------------
-S_MIN         = 100
+S_MIN         = 220
 MIN_PIXELS    = 200
 ADVANCE_PITCH = 0.15      # fly forward off the spawn pad to reach the line
 ADVANCE_TIME  = 8.0       # seconds of forward flight before fitting

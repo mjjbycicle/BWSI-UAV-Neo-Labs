@@ -52,10 +52,10 @@ KD_ALT = 1
 KP_YAW = 0.01
 
 class FullController:
-    def __init__(self, kp_alt=KP_ALT, kd_alt=KD_ALT, kp_trans=KP_TRANS, kd_trans=KD_TRANS, kp_yaw=KP_YAW, max_throttle=MAX_THROTTLE, max_speed=MAX_SPEED, max_yaw=MAX_YAW):
+    def __init__(self, kp_alt=KP_ALT, kd_alt=KD_ALT, kp_trans=KP_TRANS, kd_trans=KD_TRANS, kp_yaw=KP_YAW, kd_yaw=0.0, max_throttle=MAX_THROTTLE, max_speed=MAX_SPEED, max_yaw=MAX_YAW):
         self.fwd = PDController(kp_trans, kd_trans, max_speed, wrap=False)
         self.rgt = PDController(kp_trans, kd_trans, max_speed, wrap=False)
-        self.yaw = PDController(kp_yaw, 0.0, max_yaw, wrap=True)
+        self.yaw = PDController(kp_yaw, kd_yaw, max_yaw, wrap=True)
         self.alt = PDController(kp_alt, kd_alt, max_throttle, wrap=False)
 
     def calculate(self, _fwd=0, _rgt=0, _yaw=0, _alt=0, _fwd_vel=0, _rgt_vel=0, _alt_vel=0, dt=0.05):

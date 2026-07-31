@@ -13,20 +13,21 @@ from . import neo_lab
 from . import threading_util as tu
 
 # -- Constants --------------------------------------------------------------
-S_MIN = 200
+S_MIN = 220
 MIN_PIXELS = 200
 ADVANCE_PITCH = 0.1  # fly forward off the spawn pad to reach the line
 ADVANCE_TIME = 8.0  # seconds of forward flight before fitting
 K_CURVE = 0.1
 COL_CENTER = 320
 CLOSEST_GATE_THRESHOLD = 2.0
+DRIFT_FF = 0.25
 
 # -- Module-level state -----------------------------------------------------
 _timer = 0.0
 _done = False
 
-full_controller = PDControl.FullController(kp_yaw=0.01, kp_alt=1, max_yaw=0.7, max_throttle=0.8)
-roll_controller = PDControl.PDController(0.6, 0.0, 0.2)
+full_controller = PDControl.FullController(kp_yaw=0.017, kp_alt=1, max_yaw=1.0, max_throttle=0.8)
+roll_controller = PDControl.PDController(0.6, 1.3, 0.2)
 direction_filter = fu.VectorExponentialLowPassFilter(0.95)
 mean_filter = fu.VectorExponentialLowPassFilter(0.95)
 
@@ -40,7 +41,7 @@ _latest_cmd = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "throttle": 0.0}
 _gate_detect_thread = None
 _gate_detect_running = False
 _prev_closest_gate = None
-_target_height = 0.5
+_target_height = 1.0
 _accepting_new_height = True
 _gates = dict()
 for i in range(gd.NUM_GATES):
@@ -110,15 +111,15 @@ def line_control_loop(drone):
             target_angle = angle
 
             if abs(roll_err) < 160:
-                ADVANCE_PITCH = 0.3
-                roll_controller.kp = 0.4
-                roll_controller.max_output = 0.4
+                ADVANCE_PITCH = 0.5
+                roll_controller.kp = 0.8
+                roll_controller.max_output = 1.0
                 mode = "Straight"
             else:
-                ADVANCE_PITCH = 0.2
-                roll_controller.kp = 0.4
+                ADVANCE_PITCH = 0.3
+                roll_controller.kp = 0.8
                 mode = "Roll Correct"
-                roll_controller.max_output = 0.4
+                roll_controller.max_output = 1.0
 
             full_controller.set_setpoint(_alt=_target_height)
             normalized_roll_err = roll_err / COL_CENTER
@@ -128,6 +129,8 @@ def line_control_loop(drone):
             output = full_controller.calculate(_alt=drone.physics.get_altitude(),
                                                _alt_vel=drone.physics.get_linear_velocity()[1],
                                                _yaw=target_angle, dt=dt)
+            roll += DRIFT_FF * output[2]
+            roll = max(-1, min(1, roll))
             print(f"roll: {roll}, yaw: {output[2]}, target angle: {target_angle}, target height: {_target_height}")
             # UPDATE THREAD STATE INSTEAD OF SENDING
             set_flight_command("LINE_FOLLOW", ADVANCE_PITCH, roll, output[2], output[3])
