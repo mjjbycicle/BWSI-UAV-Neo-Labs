@@ -11,7 +11,7 @@ class PDController:
         self.kd = kd
         self.max_output = max_output
         self.setpoint = 0.0
-        self.prev_position = 0.0
+        self.prev_position = None
         self.wrap = wrap
 
     def set_setpoint(self, setpoint):
@@ -37,7 +37,27 @@ class PDController:
         return max(-self.max_output, min(self.max_output, self._calculate(current_position, current_velocity)))
 
     def calculate_position(self, current_position, delta_t):
-        return max(-self.max_output, min(self.max_output, self._calculate_position(current_position, delta_t)))
+        if self.wrap:
+            error = shortest_yaw_error(self.setpoint, current_position)
+        else:
+            error = self.setpoint - current_position
+
+        if self.prev_position is None or delta_t <= 1e-3:
+            derivative = 0.0
+        else:
+            if self.wrap:
+                position_change = shortest_yaw_error(
+                    current_position, self.prev_position
+                )
+            else:
+                position_change = current_position - self.prev_position
+
+            derivative = -position_change / delta_t
+
+        self.prev_position = current_position
+
+        output = self.kp * error + self.kd * derivative
+        return max(-self.max_output, min(self.max_output, output))
 
     def get_error(self):
         return self.prev_position - self.setpoint

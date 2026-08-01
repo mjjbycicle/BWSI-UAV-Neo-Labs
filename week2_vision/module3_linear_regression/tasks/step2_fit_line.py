@@ -121,7 +121,11 @@ def line_control_loop(drone):
             angle = np.degrees(angle)
             roll_err = mean[0] - COL_CENTER
             target_angle = angle
-            ADVANCE_PITCH = abs((90 - target_angle) / 90 * 0.4)
+            turn_fraction = np.clip(abs(target_angle) / 90.0, 0.0, 1.0)
+            ADVANCE_PITCH = 0.4 * (1.0 - turn_fraction) ** 2
+
+            if abs(target_angle) > 55.0:
+                ADVANCE_PITCH = 0.0
             if abs(roll_err) < 160 and target_angle < 45:
                 roll_controller.kp = 0.6
                 roll_controller.max_output = 0.8
@@ -133,7 +137,7 @@ def line_control_loop(drone):
             if time.time() - _through_time < 1:
                 ADVANCE_PITCH = 0.0
             else:
-                ADVANCE_PITCH = abs((90 - target_angle) / 90 * 0.5)
+                ADVANCE_PITCH = abs((90 - abs(target_angle)) / 90 * 0.5)
             full_controller.set_setpoint(_alt=_target_height)
             normalized_roll_err = roll_err / COL_CENTER
             roll = -roll_controller.calculate_position(normalized_roll_err, dt)
