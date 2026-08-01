@@ -20,21 +20,21 @@ ADVANCE_TIME = 8.0  # seconds of forward flight before fitting
 K_CURVE = 0.1
 COL_CENTER = 320
 CLOSEST_GATE_THRESHOLD = 4.0
-DRIFT_FF = 0.15
+DRIFT_FF = 0.1
 SIDE_CROP = 100
 VERT_CROP = 120
 GATE_TIME = 20
-TARGET_LF_HEIGHT = 0.8
+TARGET_LF_HEIGHT = 0.9
 
 # -- Module-level state -----------------------------------------------------
 _timer = 0.0
 _done = False
 _height_measurement = False
-_through_dist = -1
+_through_dist = -10
 _through_time = -1
 
-full_controller = PDControl.FullController(kp_yaw=0.09, kd_yaw=0.1, kp_alt=1, max_yaw=1.0, max_throttle=0.8)
-roll_controller = PDControl.PDController(0.6, 2, 0.2)
+full_controller = PDControl.FullController(kp_yaw=0.13, kd_yaw=0.12, kp_alt=1, max_yaw=1.0, max_throttle=0.8)
+roll_controller = PDControl.PDController(0.6, 2.5, 0.2)
 direction_filter = fu.VectorExponentialLowPassFilter(0.99)
 mean_filter = fu.VectorExponentialLowPassFilter(0.99)
 
@@ -87,10 +87,10 @@ def line_control_loop(drone):
 
         if _image is not None:
             image = cv2.resize(_image, (640, 480), interpolation=cv2.INTER_LINEAR)
-            image[:VERT_CROP, :] = 0
-            image[image.shape[0] - VERT_CROP:, :] = 0
-            image[:, SIDE_CROP] = 0
-            image[:, image.shape[1] - SIDE_CROP] = 0
+            # image[:VERT_CROP, :] = 0
+            image[image.shape[0] - 2 * VERT_CROP:, :] = 0
+            # image[:, SIDE_CROP] = 0
+            # image[:, image.shape[1] - SIDE_CROP] = 0
             mask = neo_lab.bright_mask(image, S_MIN)
             points = np.argwhere(mask == 255)
 
@@ -121,38 +121,33 @@ def line_control_loop(drone):
             angle = np.degrees(angle)
             roll_err = mean[0] - COL_CENTER
             target_angle = angle
-            ADVANCE_PITCH = abs((90 - target_angle) / 90 * 0.5)
+            ADVANCE_PITCH = abs((90 - target_angle) / 90 * 0.4)
             if abs(roll_err) < 160 and target_angle < 45:
-                roll_controller.kp = 0.8
-                roll_controller.max_output = 1.0
+                roll_controller.kp = 0.6
+                roll_controller.max_output = 0.8
                 mode = "Straight"
             else:
-                roll_controller.kp = 0.8
+                roll_controller.kp = 0.6
                 mode = "Roll Correct"
-                roll_controller.max_output = 1.0
-            if time.time() - _through_time < 1: ADVANCE_PITCH = 0.0
+                roll_controller.max_output = 0.8
+            if time.time() - _through_time < 1:
+                ADVANCE_PITCH = 0.0
+            else:
+                ADVANCE_PITCH = abs((90 - target_angle) / 90 * 0.5)
             full_controller.set_setpoint(_alt=_target_height)
             normalized_roll_err = roll_err / COL_CENTER
-            # print(f"roll err: {normalized_roll_err}, target angle: {target_angle}")
             roll = -roll_controller.calculate_position(normalized_roll_err, dt)
             output = full_controller.calculate(_alt=drone.physics.get_altitude(),
                                                _alt_vel=drone.physics.get_linear_velocity()[1],
                                                _yaw=target_angle, dt=dt)
             roll += DRIFT_FF * output[2]
-            roll = max(-1, min(1, roll))
-            # print(f"roll: {roll}, yaw: {output[2]}, target angle: {target_angle}, target height: {_target_height}")
-            # print(f"closest dist int: {_dist_to_gate_int}")
-            # print(f"direction: {direction}")
-            # UPDATE THREAD STATE INSTEAD OF SENDING
+            print(_through_time, _through_dist, _target_height)
+            if 1.3 > _through_dist > -0.0:
+                roll = 0.0
+                output[2] = 0.0
             set_flight_command("LINE_FOLLOW", ADVANCE_PITCH, roll, output[2], output[3])
             _prev_roll_err = roll_err
-
-        # Small sleep to prevent this loop from maxing out a CPU core
-        # --- THE RATE LIMITER ---
-        # Calculate how long the math actually took
         math_duration = time.time() - loop_start_time
-
-        # Sleep for whatever time is remaining to hit our exact 20Hz target
         time_to_sleep = loop_delay - math_duration
         if time_to_sleep > 0:
             time.sleep(time_to_sleep)
@@ -161,8 +156,6 @@ def line_control_loop(drone):
 def gate_detect_loop(drone):
     global _timer, _done, mode, _prev_closest_gate, _target_height, _dist_to_gate_int, _closest_dist, _height_measurement
     global _line_follow_running, _latest_cmd, _target_height, _through_dist, _through_time
-
-    # Target 20 frames per second (0.05 seconds per loop)
     target_fps = 20.0
     loop_delay = 1.0 / target_fps
     last_time = time.time()
@@ -176,14 +169,13 @@ def gate_detect_loop(drone):
         last_time = loop_start_time
 
         closest_gate = None
-        closest_val = float("inf")
 
         if _image is not None:
             image = cv2.resize(_image, (640, 480), interpolation=cv2.INTER_LINEAR)
             gate_measurements = gd.detect_gates(image, _timer, drone.physics.get_altitude(),
                                                 drone.physics.get_linear_velocity()[2])
+            closest_val = float("inf")
             if gate_measurements is not None:
-                print(len(gate_measurements))
                 for (gate_id, gate_measurement) in gate_measurements.items():
                     if gate_measurement is not None:
                         _gates[gate_id].update(gate_measurement)
@@ -193,29 +185,21 @@ def gate_detect_loop(drone):
                     if _gates[gate_id].distance_filter.x[0, 0] < closest_val:
                         closest_val = _gates[gate_id].distance_filter.x[0, 0]
                         closest_gate = _gates[gate_id]
-
-                # Works as long as the gates are far enough apart. 
-                # The drone would need to be able to get to the target height by the time it travels the threshold distance
-                if closest_val <= CLOSEST_GATE_THRESHOLD:
-                    _target_height = closest_gate.altitude_filter.x[0, 0]
-                    _closest_dist = closest_val
-                    _height_measurement = True
-                else:
-                    if _height_measurement:
-                        _through_dist = _closest_dist
-                        _through_time = time.time()
-                    _through_dist -= drone.physics.get_linear_velocity()[2] * dt
-                    if _through_dist < -1:
-                        _target_height = TARGET_LF_HEIGHT
-                    _height_measurement = False
-
-
-        # Small sleep to prevent this loop from maxing out a CPU core
-        # --- THE RATE LIMITER ---
-        # Calculate how long the math actually took
+            if closest_val <= CLOSEST_GATE_THRESHOLD:
+                _target_height = closest_gate.altitude_filter.x[0, 0]
+                _closest_dist = closest_val
+                _height_measurement = True
+            if closest_val > CLOSEST_GATE_THRESHOLD:
+                if _height_measurement:
+                    _through_dist = _closest_dist
+                    _through_time = time.time()
+                elif _through_dist < -0.5 and _through_time != -1:
+                    _target_height = TARGET_LF_HEIGHT
+                    _through_time = -1
+                elif _through_time != -0.25:
+                    _through_dist -= abs(drone.physics.get_linear_velocity()[2] * dt)
+                _height_measurement = False
         math_duration = time.time() - loop_start_time
-
-        # Sleep for whatever time is remaining to hit our exact 20Hz target
         time_to_sleep = loop_delay - math_duration
         if time_to_sleep > 0:
             time.sleep(time_to_sleep)
@@ -235,11 +219,9 @@ def update(drone):
     update_gate_distances(drone)
 
     if _done:
-        _line_follow_running = False  # Tell the thread loop to shut down safely
+        _line_follow_running = False
         _gate_detect_running = False
         return True
-
-    # Initialize the background thread on the first tick
     if _line_follow_thread is None or _gate_detect_thread is None:
         # 1. Start Line Follower (Active)
         _line_follow_running = True

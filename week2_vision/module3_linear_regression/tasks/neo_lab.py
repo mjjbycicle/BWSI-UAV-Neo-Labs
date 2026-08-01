@@ -34,11 +34,11 @@ def saturated_mask(image, s_max=100):
     return (hsv[:, :, 1] < s_max).astype(np.uint8) * 255
 
 
-def bright_mask(image, s_min=100):
+def bright_mask(image, v_min=100, s_max=50):
     """Binary mask (0/255) of vivid colored regions by HSV Saturation. Color-agnostic,
     so it survives the per-run recoloring of the line."""
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    return (hsv[:, :, 2] > s_min).astype(np.uint8) * 255
+    return (hsv[:, :, 2] > v_min).astype(np.uint8) * 255
 
 
 # ── Gate markers (ArUco) ─────────────────────────────────────────────────────────────

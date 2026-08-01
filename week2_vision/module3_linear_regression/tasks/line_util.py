@@ -14,8 +14,8 @@ IMAGE_WIDTH = 640
 MIN_PX = 200
 TEST_PATH = "nadir test.jpg"
 OUTPUT_PATH = "line_images/debug_output.jpeg"
-V_MIN = 190
-S_MAX = 20
+V_MIN = 210
+S_MAX = 25
 S_MIN = 200
 
 TOP_PERCENT = 0.5 # Which percent of the top part of the image gets weighted
@@ -76,12 +76,9 @@ def fit_lines(image):
 
 
 def get_inter_points(image):
-    v_mask = neo_lab.bright_mask(image, V_MIN)
-    s_mask = neo_lab.saturated_mask(image, S_MAX)
+    v_mask = neo_lab.bright_mask(image, V_MIN, S_MAX)
     points = get_points(v_mask)
-    s_points = np.argwhere(s_mask==255)
     if points is None: points = np.argwhere(v_mask==255)
-    # points = coord_intersection(v_points, s_points)
     return points
 
 

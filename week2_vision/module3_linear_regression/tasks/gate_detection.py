@@ -12,21 +12,21 @@ DETECTOR = cv2.aruco.ArucoDetector(ARUCO_DICT, ARUCO_PARAMS)
 
 # Idk how accurate the values are below
 FOCAL_PX = 615.3  # Camera focal length in pixels (approx calibration)
-REAL_TAG_SIZE = 0.19  # Physical corner-tag side length, meters (approx)
+REAL_TAG_SIZE = 0.2633525  # Physical corner-tag side length, meters (approx)
 IMAGE_HEIGHT = 480
 IMAGE_WIDTH = 640
-REAL_GATE_DIAMETER = 1.8
+REAL_GATE_DIAMETER = 1.8288
 REAL_GATE_RADIUS = REAL_GATE_DIAMETER / 2
 REAL_GATE_DIAGONAL = ((REAL_GATE_RADIUS ** 2) * 2) ** 0.5
 
-HORIZONTAL_TAGS = [35, 33, 39, 37, 43, 41] #left, right ...
-VERTICAL_TAGS = [32, 24, 36, 38, 40, 42] #top, bottom ...
+HORIZONTAL_TAGS = [00, 34, 47, 45, 40, 42, 76, 38] #left, right ...
+VERTICAL_TAGS = [35, 36, 46, 43, 41, 44, 39, 37] #top, bottom ...
 TOP_TAGS = VERTICAL_TAGS[::2]
 BOTTOM_TAGS = VERTICAL_TAGS[1::2]
 LEFT_TAGS = HORIZONTAL_TAGS[::2]
 RIGHT_TAGS = HORIZONTAL_TAGS[1::2]
 CORNER_IDX = [TOP_TAGS, RIGHT_TAGS, BOTTOM_TAGS, LEFT_TAGS]
-GATES = [[32, 33, 24, 35], [36, 37, 38, 39], [40, 41, 42, 43]]
+GATES = [[35, 34, 36, 00], [46, 45, 43, 47], [41, 42, 44, 40], [39, 38, 37, 76]]
 NUM_GATES = len(GATES)
 
 
