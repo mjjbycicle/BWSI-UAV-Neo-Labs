@@ -24,11 +24,13 @@ DRIFT_FF = 0.15
 SIDE_CROP = 100
 VERT_CROP = 120
 GATE_TIME = 20
+TARGET_LF_HEIGHT = 0.8
 
 # -- Module-level state -----------------------------------------------------
 _timer = 0.0
 _done = False
 _height_measurement = False
+_through_dist = -1
 _through_time = -1
 
 full_controller = PDControl.FullController(kp_yaw=0.09, kd_yaw=0.1, kp_alt=1, max_yaw=1.0, max_throttle=0.8)
@@ -46,7 +48,7 @@ _latest_cmd = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "throttle": 0.0}
 _gate_detect_thread = None
 _gate_detect_running = False
 _prev_closest_gate = None
-_target_height = 0.8
+_target_height = TARGET_LF_HEIGHT
 _closest_dist = 0.0
 _gates = dict()
 for i in range(gd.NUM_GATES):
@@ -128,7 +130,7 @@ def line_control_loop(drone):
                 roll_controller.kp = 0.8
                 mode = "Roll Correct"
                 roll_controller.max_output = 1.0
-
+            if time.time() - _through_time < 1: ADVANCE_PITCH = 0.0
             full_controller.set_setpoint(_alt=_target_height)
             normalized_roll_err = roll_err / COL_CENTER
             # print(f"roll err: {normalized_roll_err}, target angle: {target_angle}")
@@ -158,7 +160,7 @@ def line_control_loop(drone):
 
 def gate_detect_loop(drone):
     global _timer, _done, mode, _prev_closest_gate, _target_height, _dist_to_gate_int, _closest_dist, _height_measurement
-    global _line_follow_running, _latest_cmd, _target_height
+    global _line_follow_running, _latest_cmd, _target_height, _through_dist, _through_time
 
     # Target 20 frames per second (0.05 seconds per loop)
     target_fps = 20.0
@@ -196,22 +198,16 @@ def gate_detect_loop(drone):
                 # The drone would need to be able to get to the target height by the time it travels the threshold distance
                 if closest_val <= CLOSEST_GATE_THRESHOLD:
                     _target_height = closest_gate.altitude_filter.x[0, 0]
+                    _closest_dist = closest_val
                     _height_measurement = True
                 else:
                     if _height_measurement:
+                        _through_dist = _closest_dist
                         _through_time = time.time()
-                    if time.time() - _through_time > GATE_TIME:
-                        _target_height = 0.8
-
-                """
-                Experimental algorithm in case the above code doesn't work
-                _accepting_new_height = closest_gate.id == _prev_closest_gate.id
-
-                if closest_val <= CLOSEST_GATE_THRESHOLD:
-                    _accepting_new_height = True
-                    if _accepting_new_height:
-                        _target_height = closest_gate.altitude_filter.x[0, 0]
-                """
+                    _through_dist -= drone.physics.get_linear_velocity()[2] * dt
+                    if _through_dist < -1:
+                        _target_height = TARGET_LF_HEIGHT
+                    _height_measurement = False
 
 
         # Small sleep to prevent this loop from maxing out a CPU core
