@@ -25,6 +25,9 @@ SIDE_CROP = 100
 VERT_CROP = 120
 GATE_TIME = 20
 TARGET_LF_HEIGHT = 0.9
+GATE_ENTER_DIST = 1.5
+GATE_EXIT_DIST = -0.5
+GATE_PITCH = 0.35
 
 # -- Module-level state -----------------------------------------------------
 _timer = 0.0
@@ -33,7 +36,7 @@ _height_measurement = False
 _through_dist = -10
 _through_time = -1
 
-full_controller = PDControl.FullController(kp_yaw=0.06, kd_yaw=0.05, kp_alt=1, max_yaw=1.0, max_throttle=0.8)
+full_controller = PDControl.FullController(kp_yaw=0.06, kd_yaw=0.06, kp_alt=1, max_yaw=1.0, max_throttle=0.8)
 roll_controller = PDControl.PDController(0.6, 0.07, 0.2)
 direction_filter = fu.VectorExponentialLowPassFilter(0.99)
 mean_filter = fu.VectorExponentialLowPassFilter(0.99)
@@ -51,6 +54,9 @@ _prev_closest_gate = None
 _target_height = TARGET_LF_HEIGHT
 _closest_dist = 0.0
 _gates = dict()
+_gate_crossing = False
+_crossing_gate_id = None
+_last_crossed_gate_id = None
 for i in range(gd.NUM_GATES):
     _gates[i] = gd.Gate(0.0, i)
 _dist_to_gate_int = None
@@ -83,13 +89,30 @@ def line_control_loop(drone):
         dt = loop_start_time - last_time
         last_time = loop_start_time
 
+        if _gate_crossing:
+            full_controller.set_setpoint(_alt=_target_height)
+            output = full_controller.calculate(
+                _alt=drone.physics.get_altitude(),
+                _alt_vel=drone.physics.get_linear_velocity()[1],
+                _yaw=0.0,
+                dt=dt,
+            )
+            set_flight_command("LINE_FOLLOW", GATE_PITCH, 0.0, 0.0, output[3])
+            _return_timer = 0.0
+            _prev_roll_err = 0.0
+
+            time_to_sleep = loop_delay - (time.time() - loop_start_time)
+            if time_to_sleep > 0:
+                time.sleep(time_to_sleep)
+            continue
+
         _image = drone.camera.get_downward_image_async()
 
         if _image is not None:
             image = cv2.resize(_image, (640, 480), interpolation=cv2.INTER_LINEAR)
             # image[:VERT_CROP, :] = 0
             image[image.shape[0] - 2 * VERT_CROP:, :] = 0
-            image[:, SIDE_CROP] = 0
+            image[:, : SIDE_CROP] = 0
             image[:, image.shape[1] - SIDE_CROP] = 0
             mask = neo_lab.bright_mask(image, S_MIN)
             points = np.argwhere(mask == 255)
@@ -189,19 +212,28 @@ def gate_detect_loop(drone):
                     if _gates[gate_id].distance_filter.x[0, 0] < closest_val:
                         closest_val = _gates[gate_id].distance_filter.x[0, 0]
                         closest_gate = _gates[gate_id]
+            if gate_measurements is not None:
+                for (gate_id, gate_measurement) in gate_measurements.items():
+                    if gate_measurement is not None:
+                        _gates[gate_id].update(gate_measurement)
+                    else:
+                        _gates[gate_id].predict()
+
+                    if _gates[gate_id].distance_filter.x[0, 0] < closest_val:
+                        closest_val = _gates[gate_id].distance_filter.x[0, 0]
+                        closest_gate = _gates[gate_id]
             if closest_val <= CLOSEST_GATE_THRESHOLD:
                 _target_height = closest_gate.altitude_filter.x[0, 0]
                 _closest_dist = closest_val
                 _height_measurement = True
-            if closest_val > CLOSEST_GATE_THRESHOLD:
-                if _height_measurement:
-                    _through_dist = _closest_dist
+                if (closest_val <= GATE_ENTER_DIST
+                        and not _gate_crossing
+                        and closest_gate.id != _last_crossed_gate_id):
+                    _through_dist = closest_val
                     _through_time = time.time()
-                elif _through_dist < -0.25 and _through_time != -1:
-                    _target_height = TARGET_LF_HEIGHT
-                    _through_time = -1
-                elif _through_time != -1:
-                    _through_dist -= abs(drone.physics.get_linear_velocity()[2] * dt)
+                    _crossing_gate_id = closest_gate.id
+                    _gate_crossing = True
+            else:
                 _height_measurement = False
         math_duration = time.time() - loop_start_time
         time_to_sleep = loop_delay - math_duration
