@@ -27,7 +27,7 @@ GATE_TIME = 20
 TARGET_LF_HEIGHT = 0.9
 GATE_ENTER_DIST = 1.5
 GATE_EXIT_DIST = -0.5
-GATE_PITCH = 0.35
+GATE_PITCH = 0.4
 
 # -- Module-level state -----------------------------------------------------
 _timer = 0.0
@@ -111,9 +111,6 @@ def line_control_loop(drone):
         if _image is not None:
             image = cv2.resize(_image, (640, 480), interpolation=cv2.INTER_LINEAR)
             # image[:VERT_CROP, :] = 0
-            image[image.shape[0] - 2 * VERT_CROP:, :] = 0
-            image[:, : SIDE_CROP] = 0
-            image[:, image.shape[1] - SIDE_CROP] = 0
             mask = neo_lab.bright_mask(image, S_MIN)
             points = np.argwhere(mask == 255)
 
@@ -137,6 +134,12 @@ def line_control_loop(drone):
                     set_flight_command("LINE_FOLLOW", 0, roll, 0, 0)
                     continue
 
+            image[image.shape[0] - 2 * VERT_CROP:, :] = 0
+            image[:, : SIDE_CROP] = 0
+            image[:, image.shape[1] - SIDE_CROP] = 0
+            mask = neo_lab.bright_mask(image, S_MIN)
+            points = np.argwhere(mask == 255)
+
             _direction, _mean = lu.fit_lines(image)
             direction = direction_filter(_direction)
             mean = mean_filter(_mean)
@@ -145,7 +148,7 @@ def line_control_loop(drone):
             roll_err = mean[0] - COL_CENTER
             target_angle = angle
             turn_fraction = np.clip(abs(target_angle) / 90.0, 0.0, 1.0)
-            ADVANCE_PITCH = 0.4 * (1.0 - turn_fraction) ** 2
+            ADVANCE_PITCH = 0.5 * (1.0 - turn_fraction) ** 2
             if abs(target_angle) > 55.0:
                 ADVANCE_PITCH = 0.0
             if abs(roll_err) < 160 and target_angle < 45:
