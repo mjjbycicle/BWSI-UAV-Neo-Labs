@@ -19,8 +19,8 @@ ADVANCE_PITCH = 0.1  # fly forward off the spawn pad to reach the line
 ADVANCE_TIME = 8.0  # seconds of forward flight before fitting
 K_CURVE = 0.1
 COL_CENTER = 320
-CLOSEST_GATE_THRESHOLD = 4.0
-DRIFT_FF = 0.1
+CLOSEST_GATE_THRESHOLD = 5.0
+DRIFT_FF = 0.12
 SIDE_CROP = 100
 VERT_CROP = 120
 GATE_TIME = 20
@@ -33,8 +33,8 @@ _height_measurement = False
 _through_dist = -10
 _through_time = -1
 
-full_controller = PDControl.FullController(kp_yaw=0.13, kd_yaw=0.12, kp_alt=1, max_yaw=1.0, max_throttle=0.8)
-roll_controller = PDControl.PDController(0.6, 2.5, 0.2)
+full_controller = PDControl.FullController(kp_yaw=0.06, kd_yaw=0.05, kp_alt=1, max_yaw=1.0, max_throttle=0.8)
+roll_controller = PDControl.PDController(0.6, 0.07, 0.2)
 direction_filter = fu.VectorExponentialLowPassFilter(0.99)
 mean_filter = fu.VectorExponentialLowPassFilter(0.99)
 
@@ -89,8 +89,8 @@ def line_control_loop(drone):
             image = cv2.resize(_image, (640, 480), interpolation=cv2.INTER_LINEAR)
             # image[:VERT_CROP, :] = 0
             image[image.shape[0] - 2 * VERT_CROP:, :] = 0
-            # image[:, SIDE_CROP] = 0
-            # image[:, image.shape[1] - SIDE_CROP] = 0
+            image[:, SIDE_CROP] = 0
+            image[:, image.shape[1] - SIDE_CROP] = 0
             mask = neo_lab.bright_mask(image, S_MIN)
             points = np.argwhere(mask == 255)
 
@@ -123,7 +123,6 @@ def line_control_loop(drone):
             target_angle = angle
             turn_fraction = np.clip(abs(target_angle) / 90.0, 0.0, 1.0)
             ADVANCE_PITCH = 0.4 * (1.0 - turn_fraction) ** 2
-
             if abs(target_angle) > 55.0:
                 ADVANCE_PITCH = 0.0
             if abs(roll_err) < 160 and target_angle < 45:
@@ -134,10 +133,10 @@ def line_control_loop(drone):
                 roll_controller.kp = 0.6
                 mode = "Roll Correct"
                 roll_controller.max_output = 0.8
-            if time.time() - _through_time < 1:
+            if time.time() - _through_time < 2:
                 ADVANCE_PITCH = 0.0
             else:
-                ADVANCE_PITCH = abs((90 - abs(target_angle)) / 90 * 0.5)
+                ADVANCE_PITCH = 0.4 * (1.0 - turn_fraction) ** 2
             full_controller.set_setpoint(_alt=_target_height)
             normalized_roll_err = roll_err / COL_CENTER
             roll = -roll_controller.calculate_position(normalized_roll_err, dt)
@@ -146,9 +145,10 @@ def line_control_loop(drone):
                                                _yaw=target_angle, dt=dt)
             roll += DRIFT_FF * output[2]
             print(_through_time, _through_dist, _target_height)
-            if 1.3 > _through_dist > -0.0:
+            if 1.5 > _through_dist > -0.5:
                 roll = 0.0
                 output[2] = 0.0
+                output[3] = 0.0
             set_flight_command("LINE_FOLLOW", ADVANCE_PITCH, roll, output[2], output[3])
             _prev_roll_err = roll_err
         math_duration = time.time() - loop_start_time
@@ -197,10 +197,10 @@ def gate_detect_loop(drone):
                 if _height_measurement:
                     _through_dist = _closest_dist
                     _through_time = time.time()
-                elif _through_dist < -0.5 and _through_time != -1:
+                elif _through_dist < -0.25 and _through_time != -1:
                     _target_height = TARGET_LF_HEIGHT
                     _through_time = -1
-                elif _through_time != -0.25:
+                elif _through_time != -1:
                     _through_dist -= abs(drone.physics.get_linear_velocity()[2] * dt)
                 _height_measurement = False
         math_duration = time.time() - loop_start_time

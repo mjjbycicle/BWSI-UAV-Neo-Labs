@@ -6,7 +6,7 @@ from scipy.sparse.csgraph import minimum_spanning_tree, depth_first_order
 from scipy.spatial import cKDTree
 import numpy as np
 import cv2
-import neo_lab
+from . import neo_lab
 
 IMAGE_HEIGHT = 480
 IMAGE_WIDTH = 640
